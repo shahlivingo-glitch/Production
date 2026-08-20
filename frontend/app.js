@@ -20,7 +20,8 @@ var ADMIN_EXTRA_LABELS = {
 var STAGE_VIEW_HANDLERS = {
   orders: 'renderOrderFormView',
   settings: 'renderModelSettingsView',
-  cutting: 'renderCuttingQueueView'
+  cutting: 'renderCuttingQueueView',
+  bending: 'renderBendingQueueView'
 };
 
 var state = {

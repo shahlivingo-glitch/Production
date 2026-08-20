@@ -2,59 +2,62 @@ function jsonOutput(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
+var GET_ACTIONS = {
+  users: function (p) { return getUsersForLogin(); },
+  orders: function (p) { return listOrders(p.userId); },
+  models: function (p) { return listModels(p.userId); },
+  model: function (p) { return getModel(p.userId, p.modelNoName); },
+  cuttingQueue: function (p) { return getCuttingQueue(p.userId); },
+  bendingQueue: function (p) { return getBendingQueue(p.userId); },
+  bendingUnlockedList: function (p) { return listUnlockedBendingQueue(p.userId); }
+};
+
+var POST_ACTIONS = {
+  createOrder: function (b) { return createOrder(b); },
+  saveModel: function (b) { return saveModel(b); },
+  startCutting: function (b) { return startCuttingSheet(b); },
+  completeCutting: function (b) { return completeCuttingSheet(b); },
+  submitCuttingQC: function (b) { return submitCuttingQC(b); },
+  startBending: function (b) { return startBendingPart(b); },
+  completeBending: function (b) { return completeBendingPart(b); },
+  submitBendingQC: function (b) { return submitBendingQC(b); },
+  reorderBending: function (b) { return reorderBendingQueue(b); }
+};
+
 function doGet(e) {
-  var action = e.parameter.action;
-  var userId = e.parameter.userId;
+  var handler = GET_ACTIONS[e.parameter.action];
+  if (!handler) {
+    return jsonOutput({ ok: false, error: 'Unknown action: ' + e.parameter.action });
+  }
   try {
-    if (action === 'users') {
-      return jsonOutput({ ok: true, data: getUsersForLogin() });
-    }
-    if (action === 'orders') {
-      return jsonOutput({ ok: true, data: listOrders(userId) });
-    }
-    if (action === 'models') {
-      return jsonOutput({ ok: true, data: listModels(userId) });
-    }
-    if (action === 'model') {
-      return jsonOutput({ ok: true, data: getModel(userId, e.parameter.modelNoName) });
-    }
-    if (action === 'cuttingQueue') {
-      return jsonOutput({ ok: true, data: getCuttingQueue(userId) });
-    }
-    return jsonOutput({ ok: false, error: 'Unknown action: ' + action });
+    return jsonOutput({ ok: true, data: handler(e.parameter) });
   } catch (err) {
     return jsonOutput({ ok: false, error: err.message });
   }
 }
 
 function doPost(e) {
-  var body = {};
+  var body;
   try {
     body = JSON.parse(e.postData.contents);
   } catch (err) {
     return jsonOutput({ ok: false, error: 'Invalid request body' });
   }
 
-  try {
-    if (body.action === 'login') {
+  if (body.action === 'login') {
+    try {
       return jsonOutput(validatePinAndLogin(body.userId, body.pin));
+    } catch (err) {
+      return jsonOutput({ ok: false, error: err.message });
     }
-    if (body.action === 'createOrder') {
-      return jsonOutput({ ok: true, data: createOrder(body) });
-    }
-    if (body.action === 'saveModel') {
-      return jsonOutput({ ok: true, data: saveModel(body) });
-    }
-    if (body.action === 'startCutting') {
-      return jsonOutput({ ok: true, data: startCuttingSheet(body) });
-    }
-    if (body.action === 'completeCutting') {
-      return jsonOutput({ ok: true, data: completeCuttingSheet(body) });
-    }
-    if (body.action === 'submitCuttingQC') {
-      return jsonOutput({ ok: true, data: submitCuttingQC(body) });
-    }
+  }
+
+  var handler = POST_ACTIONS[body.action];
+  if (!handler) {
     return jsonOutput({ ok: false, error: 'Unknown action: ' + body.action });
+  }
+  try {
+    return jsonOutput({ ok: true, data: handler(body) });
   } catch (err) {
     return jsonOutput({ ok: false, error: err.message });
   }
