@@ -1,4 +1,4 @@
-var API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+var API_URL = 'https://script.google.com/macros/s/AKfycbycgBW8zp3sF20h90ZqpxLFGQ-kBO2Z6yKCkjcnnXbXMcr1ZI2HSqa3onKmu-n70n6Qcw/exec';
 
 var SESSION_KEY = 'almirah_session';
 
