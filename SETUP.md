@@ -52,11 +52,19 @@ From `google-scripts/`:
 npm run push
 ```
 
-Then `npm run open` to open the project in the browser. Pick `Setup.gs` in
-the file dropdown, choose the `setupSpreadsheet` function, click **Run**.
-First run asks you to authorize — click **Advanced → Go to (project name)
-(unsafe)**, this is expected for your own script. This creates every tab
-with headers.
+Now open the actual Google Sheet (not the script editor) and **reload the
+page**. You'll see a new **Almirah Tracker** menu next to Help. Click
+**Almirah Tracker → Run Sheet Setup**.
+
+First click asks you to authorize — a dialog appears, click **Continue**,
+pick your account, then **Advanced → Go to (project name) (unsafe)** and
+**Allow**. This is expected for your own script. Click **Almirah Tracker →
+Run Sheet Setup** once more and you'll see a "All tabs are set up" toast —
+every tab now exists with the correct headers.
+
+This is safe to re-run any time (after pulling code changes that add new
+tabs, for example) — it only creates missing tabs and rewrites the header
+row, it never touches existing data rows.
 
 ## 6. Add your first admin user
 

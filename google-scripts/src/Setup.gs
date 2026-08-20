@@ -1,3 +1,10 @@
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Almirah Tracker')
+    .addItem('Run Sheet Setup', 'setupSpreadsheet')
+    .addToUi();
+}
+
 function setupSpreadsheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   Object.keys(TAB_HEADERS).forEach(function (tabName) {
@@ -14,4 +21,5 @@ function setupSpreadsheet() {
     ss.deleteSheet(defaultSheet);
   }
   SpreadsheetApp.flush();
+  SpreadsheetApp.getActiveSpreadsheet().toast('All tabs are set up.', 'Almirah Tracker', 5);
 }
