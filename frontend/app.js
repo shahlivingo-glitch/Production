@@ -22,6 +22,8 @@ var state = {
   pinBuffer: ''
 };
 
+var currentSession = null;
+
 function el(id) { return document.getElementById(id); }
 
 function apiGet(action, params) {
@@ -153,7 +155,12 @@ function onLoginResult(result) {
   renderDashboard(result.session);
 }
 
+function goToDashboard() {
+  renderDashboard(currentSession);
+}
+
 function renderDashboard(session) {
+  currentSession = session;
   el('login-root').style.display = 'none';
   el('topbar').style.display = 'flex';
   el('topbar-username').textContent = session.name + ' (' + session.role + ')';
@@ -192,9 +199,57 @@ function buildStageCard(label, key) {
   card.className = 'card stage-card';
   card.innerHTML = '<span class="stage-card-label">' + label + '</span><span>›</span>';
   card.addEventListener('click', function () {
-    alert(label + ' opens in a later build phase.');
+    if (key === 'orders' && typeof renderOrderFormView === 'function') {
+      renderOrderFormView();
+    } else if (key === 'settings' && typeof renderModelSettingsView === 'function') {
+      renderModelSettingsView();
+    } else {
+      alert(label + ' opens in a later build phase.');
+    }
   });
   return card;
+}
+
+function buildViewHeader(title) {
+  var header = document.createElement('div');
+  header.className = 'view-header';
+  var back = document.createElement('button');
+  back.className = 'btn btn-secondary back-btn';
+  back.textContent = '← Back';
+  back.addEventListener('click', goToDashboard);
+  var h2 = document.createElement('h2');
+  h2.textContent = title;
+  header.appendChild(back);
+  header.appendChild(h2);
+  return header;
+}
+
+function buildTextField(labelText, value, onChange) {
+  var field = document.createElement('div');
+  field.className = 'field';
+  var label = document.createElement('label');
+  label.textContent = labelText;
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.value = value || '';
+  input.addEventListener('input', function (e) { onChange(e.target.value); });
+  field.appendChild(label);
+  field.appendChild(input);
+  return field;
+}
+
+function buildNumberField(labelText, value, onChange) {
+  var field = document.createElement('div');
+  field.className = 'field';
+  var label = document.createElement('label');
+  label.textContent = labelText;
+  var input = document.createElement('input');
+  input.type = 'number';
+  input.value = value || '';
+  input.addEventListener('input', function (e) { onChange(e.target.value); });
+  field.appendChild(label);
+  field.appendChild(input);
+  return field;
 }
 
 function logout() {
