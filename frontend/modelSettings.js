@@ -13,9 +13,21 @@ function emptyModelForm() {
   };
 }
 
+function partsMapToDisplayText(rawParts) {
+  if (!rawParts) return '';
+  if (Array.isArray(rawParts)) {
+    var counts = {};
+    rawParts.forEach(function (name) { counts[name] = (counts[name] || 0) + 1; });
+    rawParts = counts;
+  }
+  return Object.keys(rawParts).map(function (name) {
+    return name + ':' + rawParts[name];
+  }).join(', ');
+}
+
 function modelToForm(m) {
   var sheetRows = m.sheetSequence.map(function (code) {
-    return { code: code, parts: (m.partsPerSheet[code] || []).join(', ') };
+    return { code: code, parts: partsMapToDisplayText(m.partsPerSheet[code]) };
   });
   if (sheetRows.length === 0) sheetRows.push({ code: '', parts: '' });
 
@@ -109,7 +121,7 @@ function renderModelSettingsForm() {
   var seqHint = document.createElement('div');
   seqHint.className = 'muted';
   seqHint.style.marginBottom = '10px';
-  seqHint.textContent = 'Order matters — this is the fixed cut order. List the parts each sheet produces, comma-separated.';
+  seqHint.textContent = 'Order matters — this is the fixed cut order. List parts as Name:Qty (e.g. Side:2, Palla Support:3), comma-separated. No :Qty means 1.';
   root.appendChild(seqHint);
 
   var seqWrap = document.createElement('div');
@@ -173,7 +185,7 @@ function renderSheetRows(wrap) {
     codeInput.addEventListener('input', function (e) { row.code = e.target.value; });
 
     var partsInput = document.createElement('input');
-    partsInput.placeholder = 'Parts on this sheet, comma-separated';
+    partsInput.placeholder = 'Side:2, Palla Support:3';
     partsInput.value = row.parts;
     partsInput.addEventListener('input', function (e) { row.parts = e.target.value; });
 
@@ -243,7 +255,15 @@ function submitModelForm() {
     var code = row.code.trim();
     if (!code) return;
     sheetSequence.push(code);
-    partsPerSheet[code] = row.parts.split(',').map(function (p) { return p.trim(); }).filter(function (p) { return p; });
+    var parts = {};
+    row.parts.split(',').forEach(function (token) {
+      var pieces = token.split(':');
+      var name = pieces[0].trim();
+      if (!name) return;
+      var qty = pieces[1] ? Number(pieces[1].trim()) || 1 : 1;
+      parts[name] = qty;
+    });
+    partsPerSheet[code] = parts;
   });
 
   var bom = {};

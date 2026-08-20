@@ -8,6 +8,27 @@ function computeSpeedPoints(targetMinutes, actualMinutes) {
   return Math.max(0, Math.min(200, Math.round(ratio * 100)));
 }
 
+function partsForSheet(partsPerSheet, sheetCode) {
+  var raw = partsPerSheet[String(sheetCode)];
+  if (!raw) {
+    return {};
+  }
+  if (Array.isArray(raw)) {
+    var map = {};
+    raw.forEach(function (name) {
+      map[name] = (map[name] || 0) + 1;
+    });
+    return map;
+  }
+  return raw;
+}
+
+function totalPartsQty(partsMap) {
+  return Object.keys(partsMap).reduce(function (sum, name) {
+    return sum + (Number(partsMap[name]) || 0);
+  }, 0);
+}
+
 function getOrdersById() {
   var map = {};
   getAllRows('Orders').forEach(function (o) {
@@ -43,8 +64,9 @@ function getCuttingQueue(userId) {
 
   var model = findRowById('ModelSettings', 'ModelNoName', next.ModelNoName);
   var order = orders[next.OrderID];
+  var orderQty = order ? Number(order.Qty) || 0 : 0;
   var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
-  var parts = partsPerSheet[next.SheetCode] || [];
+  var partsMap = partsForSheet(partsPerSheet, next.SheetCode);
 
   return {
     logId: next.LogID,
@@ -56,8 +78,10 @@ function getCuttingQueue(userId) {
     startedAt: next.StartedAt,
     customerName: order ? order.CustomerName : '',
     cuttingTimeTarget: model ? model.CuttingTimeTarget : 0,
-    parts: parts,
-    expectedQty: parts.length
+    parts: Object.keys(partsMap).map(function (name) {
+      return name + ' x' + ((Number(partsMap[name]) || 0) * orderQty);
+    }),
+    expectedQty: totalPartsQty(partsMap) * orderQty
   };
 }
 
@@ -89,6 +113,8 @@ function completeCuttingSheet(payload) {
   }
 
   var model = findRowById('ModelSettings', 'ModelNoName', row.ModelNoName);
+  var order = findRowById('Orders', 'OrderID', row.OrderID);
+  var orderQty = order ? Number(order.Qty) || 0 : 0;
   var startedAt = new Date(row.StartedAt).getTime();
   var completedAt = new Date();
   var actualMinutes = (completedAt.getTime() - startedAt) / 60000;
@@ -101,7 +127,7 @@ function completeCuttingSheet(payload) {
   });
 
   var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
-  var parts = partsPerSheet[row.SheetCode] || [];
+  var partsMap = partsForSheet(partsPerSheet, row.SheetCode);
 
   return {
     logId: payload.logId,
@@ -109,8 +135,10 @@ function completeCuttingSheet(payload) {
     sheetCode: row.SheetCode,
     points: points,
     actualMinutes: Math.round(actualMinutes * 10) / 10,
-    parts: parts,
-    expectedQty: parts.length
+    parts: Object.keys(partsMap).map(function (name) {
+      return name + ' x' + ((Number(partsMap[name]) || 0) * orderQty);
+    }),
+    expectedQty: totalPartsQty(partsMap) * orderQty
   };
 }
 
@@ -154,17 +182,18 @@ function submitCuttingQC(payload) {
   if (shouldPushToBending) {
     var model = findRowById('ModelSettings', 'ModelNoName', row.ModelNoName);
     var order = findRowById('Orders', 'OrderID', row.OrderID);
+    var orderQty = order ? Number(order.Qty) || 0 : 0;
     var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
-    var parts = partsPerSheet[row.SheetCode] || [];
-    var qty = order ? order.Qty : 0;
+    var partsMap = partsForSheet(partsPerSheet, row.SheetCode);
 
-    parts.forEach(function (partName) {
+    Object.keys(partsMap).forEach(function (partName) {
+      var totalQty = (Number(partsMap[partName]) || 0) * orderQty;
       appendRow('BendingQueue', {
         QueueID: generateId('BQ'),
         OrderID: row.OrderID,
         PartName: partName,
         SheetCode: row.SheetCode,
-        Qty: qty,
+        Qty: totalQty,
         Status: 'unlocked',
         Priority: new Date().getTime(),
         StartedAt: '',
@@ -172,7 +201,7 @@ function submitCuttingQC(payload) {
         OperatorID: '',
         Points: ''
       });
-      pushedParts.push(partName);
+      pushedParts.push(partName + ' x' + totalQty);
     });
   } else if (failAction === 'recut') {
     appendRow('CuttingLog', {

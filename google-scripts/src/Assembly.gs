@@ -2,7 +2,8 @@ function getAllRequiredParts(model) {
   var partsPerSheet = parseJsonSafe(model.PartsPerSheet, {});
   var set = {};
   Object.keys(partsPerSheet).forEach(function (sheetCode) {
-    (partsPerSheet[sheetCode] || []).forEach(function (part) {
+    var partsMap = partsForSheet(partsPerSheet, sheetCode);
+    Object.keys(partsMap).forEach(function (part) {
       set[part] = true;
     });
   });

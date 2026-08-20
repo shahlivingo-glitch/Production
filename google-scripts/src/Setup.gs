@@ -15,6 +15,7 @@ function setupSpreadsheet() {
     var headers = TAB_HEADERS[tabName];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, sheet.getMaxRows(), headers.length).setNumberFormat('@');
   });
   var defaultSheet = ss.getSheetByName('Sheet1');
   if (defaultSheet && ss.getSheets().length > 1) {
