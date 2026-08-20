@@ -21,7 +21,8 @@ var STAGE_VIEW_HANDLERS = {
   orders: 'renderOrderFormView',
   settings: 'renderModelSettingsView',
   cutting: 'renderCuttingQueueView',
-  bending: 'renderBendingQueueView'
+  bending: 'renderBendingQueueView',
+  assembly: 'renderAssemblyView'
 };
 
 var state = {

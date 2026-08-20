@@ -4,7 +4,7 @@ var TAB_HEADERS = {
   CuttingLog: ['LogID', 'OrderID', 'ModelNoName', 'SheetCode', 'SheetSequencePos', 'Status', 'StartedAt', 'CompletedAt', 'OperatorID', 'Points'],
   CuttingQC: ['QCID', 'OrderID', 'SheetCode', 'CheckedQty', 'ExpectedQty', 'Result', 'FailAction', 'CheckerID', 'Timestamp'],
   BendingQueue: ['QueueID', 'OrderID', 'PartName', 'SheetCode', 'Qty', 'Status', 'Priority', 'StartedAt', 'CompletedAt', 'OperatorID', 'Points'],
-  BendingQC: ['QCID', 'OrderID', 'SheetCode', 'CheckedQty', 'ExpectedQty', 'Result', 'FailAction', 'CheckerID', 'Timestamp'],
+  BendingQC: ['QCID', 'OrderID', 'PartName', 'SheetCode', 'CheckedQty', 'ExpectedQty', 'Result', 'FailAction', 'CheckerID', 'Timestamp'],
   AssemblyLog: ['LogID', 'OrderID', 'ModelNoName', 'Qty', 'PlannedBOM', 'ActualBOM', 'InventoryShortageFlag', 'StartedAt', 'CompletedAt', 'OperatorID'],
   PowderQueue: ['QueueID', 'OrderID', 'ModelNoName', 'Colour', 'Qty', 'Status', 'PlannedPowderKg', 'ActualPowderKg', 'FromMainStockKg', 'FromPersonalStockKg', 'LeftoverKg', 'OperatorID', 'StartedAt', 'CompletedAt'],
   PowderMainStock: ['Colour', 'CurrentKg', 'LastVerifiedKg', 'LastVerifiedBy', 'LastVerifiedAt'],

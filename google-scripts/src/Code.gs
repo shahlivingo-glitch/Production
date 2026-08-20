@@ -9,7 +9,9 @@ var GET_ACTIONS = {
   model: function (p) { return getModel(p.userId, p.modelNoName); },
   cuttingQueue: function (p) { return getCuttingQueue(p.userId); },
   bendingQueue: function (p) { return getBendingQueue(p.userId); },
-  bendingUnlockedList: function (p) { return listUnlockedBendingQueue(p.userId); }
+  bendingUnlockedList: function (p) { return listUnlockedBendingQueue(p.userId); },
+  readyAssemblyOrders: function (p) { return listReadyAssemblyOrders(p.userId); },
+  assemblyOrderDetail: function (p) { return getAssemblyOrderDetail(p.userId, p.orderId); }
 };
 
 var POST_ACTIONS = {
@@ -21,7 +23,9 @@ var POST_ACTIONS = {
   startBending: function (b) { return startBendingPart(b); },
   completeBending: function (b) { return completeBendingPart(b); },
   submitBendingQC: function (b) { return submitBendingQC(b); },
-  reorderBending: function (b) { return reorderBendingQueue(b); }
+  reorderBending: function (b) { return reorderBendingQueue(b); },
+  startAssembly: function (b) { return startAssembly(b); },
+  completeAssembly: function (b) { return completeAssembly(b); }
 };
 
 function doGet(e) {

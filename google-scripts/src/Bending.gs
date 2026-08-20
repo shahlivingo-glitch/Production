@@ -99,6 +99,7 @@ function submitBendingQC(payload) {
   appendRow('BendingQC', {
     QCID: generateId('BQC'),
     OrderID: row.OrderID,
+    PartName: row.PartName,
     SheetCode: row.SheetCode,
     CheckedQty: Number(payload.checkedQty) || 0,
     ExpectedQty: Number(payload.expectedQty) || 0,
