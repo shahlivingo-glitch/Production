@@ -17,6 +17,12 @@ var ADMIN_EXTRA_LABELS = {
   users: 'User Management'
 };
 
+var STAGE_VIEW_HANDLERS = {
+  orders: 'renderOrderFormView',
+  settings: 'renderModelSettingsView',
+  cutting: 'renderCuttingQueueView'
+};
+
 var state = {
   selectedUser: null,
   pinBuffer: ''
@@ -199,10 +205,10 @@ function buildStageCard(label, key) {
   card.className = 'card stage-card';
   card.innerHTML = '<span class="stage-card-label">' + label + '</span><span>›</span>';
   card.addEventListener('click', function () {
-    if (key === 'orders' && typeof renderOrderFormView === 'function') {
-      renderOrderFormView();
-    } else if (key === 'settings' && typeof renderModelSettingsView === 'function') {
-      renderModelSettingsView();
+    var handlerName = STAGE_VIEW_HANDLERS[key];
+    var handler = handlerName && window[handlerName];
+    if (typeof handler === 'function') {
+      handler();
     } else {
       alert(label + ' opens in a later build phase.');
     }

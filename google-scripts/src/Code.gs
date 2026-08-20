@@ -18,6 +18,9 @@ function doGet(e) {
     if (action === 'model') {
       return jsonOutput({ ok: true, data: getModel(userId, e.parameter.modelNoName) });
     }
+    if (action === 'cuttingQueue') {
+      return jsonOutput({ ok: true, data: getCuttingQueue(userId) });
+    }
     return jsonOutput({ ok: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOutput({ ok: false, error: err.message });
@@ -41,6 +44,15 @@ function doPost(e) {
     }
     if (body.action === 'saveModel') {
       return jsonOutput({ ok: true, data: saveModel(body) });
+    }
+    if (body.action === 'startCutting') {
+      return jsonOutput({ ok: true, data: startCuttingSheet(body) });
+    }
+    if (body.action === 'completeCutting') {
+      return jsonOutput({ ok: true, data: completeCuttingSheet(body) });
+    }
+    if (body.action === 'submitCuttingQC') {
+      return jsonOutput({ ok: true, data: submitCuttingQC(body) });
     }
     return jsonOutput({ ok: false, error: 'Unknown action: ' + body.action });
   } catch (err) {
