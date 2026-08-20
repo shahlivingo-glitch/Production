@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "login": "clasp login",
-    "push": "cd apps-script && clasp push",
-    "open": "cd apps-script && clasp open",
-    "deploy": "cd apps-script && clasp deploy"
+    "push": "clasp push",
+    "open": "clasp open",
+    "deploy": "clasp deploy"
   },
   "devDependencies": {
     "@google/clasp": "^2.4.2"

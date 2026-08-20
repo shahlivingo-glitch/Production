@@ -1,20 +1,20 @@
 # Almirah Production Tracker — Setup
 
 **Architecture:** the live app pages are static files served by **GitHub
-Pages** (from `docs/`). They talk to **Google Apps Script**, which is
-deployed as a JSON API only (no HTML) backed by the Google Sheet. The
+Pages** (from `github-pages/`). They talk to **Google Apps Script**, which
+is deployed as a JSON API only (no HTML) backed by the Google Sheet. The
 frontend calls that API with `fetch()`.
 
 ```
-docs/            -> served by GitHub Pages (index.html, styles.css, app.js)
-apps-script/src/ -> pushed to Google Apps Script (Code.gs, SheetService.gs, ...)
+google-scripts/  -> everything Google: clasp config + src/*.gs pushed to Apps Script
+github-pages/    -> everything GitHub-hosted: the live site (index.html, styles.css, app.js)
+.github/         -> GitHub Actions workflow (must live at repo root, GitHub requires this)
 ```
 
 ## 1. Install dependencies
 
-From the repo root:
-
 ```
+cd google-scripts
 npm install
 ```
 
@@ -23,6 +23,8 @@ npm install
 Go to https://script.google.com/home/usersettings and turn the toggle **ON**.
 
 ## 3. Log in with clasp
+
+From `google-scripts/`:
 
 ```
 npx clasp login
@@ -39,10 +41,12 @@ spreadsheet. Creates `~/.clasprc.json` locally. **Never commit this file**
 2. `Extensions → Apps Script`. This creates a script bound to the sheet, so
    `SpreadsheetApp.getActiveSpreadsheet()` in the code finds it automatically.
 3. Gear icon (**Project Settings**) → copy the **Script ID**.
-4. Open `apps-script/.clasp.json` and replace `PASTE_YOUR_SCRIPT_ID_HERE`
+4. Open `google-scripts/.clasp.json` and replace `PASTE_YOUR_SCRIPT_ID_HERE`
    with that Script ID.
 
 ## 5. Push the backend and build the tabs
+
+From `google-scripts/`:
 
 ```
 npm run push
@@ -76,7 +80,7 @@ Click **Deploy**. Copy:
 
 ## 8. Point the frontend at the API
 
-Open `docs/app.js`, find:
+Open `github-pages/app.js`, find:
 
 ```js
 var API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
@@ -85,6 +89,8 @@ var API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
 Replace with the Web app URL from step 7.
 
 ## 9. Create the GitHub repo and push
+
+From the repo root:
 
 ```
 git init
@@ -95,15 +101,14 @@ git remote add origin <your-repo-url>
 git push -u origin main
 ```
 
-## 10. Turn on GitHub Pages
+## 10. Turn on GitHub Pages (Actions-based)
 
 In the GitHub repo: **Settings → Pages**. Under **Build and deployment**,
-set **Source: Deploy from a branch**, **Branch: main**, folder **/docs**.
-Save. GitHub gives you a URL like `https://<you>.github.io/<repo>/` —
-that's the live app link for tablets/phones. It rebuilds automatically
-whenever `docs/` changes on `main`.
+set **Source: GitHub Actions** (not "Deploy from a branch" — the workflow
+handles the build itself since `github-pages/` isn't at a fixed path GitHub
+auto-detects). Nothing else to configure here; the workflow does the rest.
 
-## 11. Add GitHub Actions secrets (for auto-deploying the backend)
+## 11. Add GitHub Actions secrets (for the Apps Script deploy job)
 
 **Settings → Secrets and variables → Actions → New repository secret**:
 
@@ -112,15 +117,16 @@ whenever `docs/` changes on `main`.
 
 ## 12. Confirm everything is wired up
 
-Open the GitHub Pages URL from step 10, tap your name, enter the PIN, and
-confirm the dashboard shell loads with your stage cards.
+Push any small change to `main` and check the **Actions** tab — you should
+see two jobs run: `deploy-backend` (pushes to Apps Script) and
+`deploy-pages` (publishes `github-pages/`). Once both finish, open the URL
+shown in the `deploy-pages` job (also visible under **Settings → Pages**),
+tap your name, enter the PIN, and confirm the dashboard shell loads with
+your stage cards.
 
-For future changes: edit files under `apps-script/src/` and/or `docs/`,
-commit, and push to `main`.
-- Changes under `docs/` go live automatically via GitHub Pages.
-- Changes under `apps-script/src/` are picked up by the "Deploy to Apps
-  Script" GitHub Action, which pushes to the same script and updates the
-  same Deployment ID — the API URL never changes.
+For future changes: edit files under `google-scripts/src/` and/or
+`github-pages/`, commit, and push to `main` — both jobs re-run
+automatically and the URLs never change.
 
 ## Notes
 

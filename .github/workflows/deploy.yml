@@ -1,12 +1,24 @@
-name: Deploy to Apps Script
+name: Deploy
 
 on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
-  deploy:
+  deploy-backend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: google-scripts
     steps:
       - uses: actions/checkout@v4
 
@@ -22,11 +34,26 @@ jobs:
           CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
 
       - name: Push source to Apps Script
-        working-directory: apps-script
         run: npx clasp push --force
 
       - name: Update the live web app deployment
-        working-directory: apps-script
         run: npx clasp deploy -i "$DEPLOYMENT_ID" -d "Deploy ${{ github.sha }}"
         env:
           DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+
+  deploy-pages:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: github-pages
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
