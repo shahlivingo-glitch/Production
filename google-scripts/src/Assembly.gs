@@ -157,5 +157,26 @@ function completeAssembly(payload) {
     CompletedAt: nowIso()
   });
 
+  var order = findRowById('Orders', 'OrderID', row.OrderID);
+  var colourPlan = order ? parseJsonSafe(order.ColourPlan, {}) : {};
+  Object.keys(colourPlan).forEach(function (colour) {
+    appendRow('PowderQueue', {
+      QueueID: generateId('PQ'),
+      OrderID: row.OrderID,
+      ModelNoName: row.ModelNoName,
+      Colour: colour,
+      Qty: colourPlan[colour],
+      Status: 'pending',
+      PlannedPowderKg: '',
+      ActualPowderKg: '',
+      FromMainStockKg: '',
+      FromPersonalStockKg: '',
+      LeftoverKg: '',
+      OperatorID: '',
+      StartedAt: '',
+      CompletedAt: ''
+    });
+  });
+
   return { logId: payload.logId, orderId: row.OrderID, shortages: shortages };
 }

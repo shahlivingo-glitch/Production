@@ -11,7 +11,10 @@ var GET_ACTIONS = {
   bendingQueue: function (p) { return getBendingQueue(p.userId); },
   bendingUnlockedList: function (p) { return listUnlockedBendingQueue(p.userId); },
   readyAssemblyOrders: function (p) { return listReadyAssemblyOrders(p.userId); },
-  assemblyOrderDetail: function (p) { return getAssemblyOrderDetail(p.userId, p.orderId); }
+  assemblyOrderDetail: function (p) { return getAssemblyOrderDetail(p.userId, p.orderId); },
+  powderQueue: function (p) { return listPowderQueue(p.userId); },
+  powderStockSummary: function (p) { return getPowderStockSummary(p.userId); },
+  personalStockList: function (p) { return listAllPersonalStock(p.userId); }
 };
 
 var POST_ACTIONS = {
@@ -25,7 +28,11 @@ var POST_ACTIONS = {
   submitBendingQC: function (b) { return submitBendingQC(b); },
   reorderBending: function (b) { return reorderBendingQueue(b); },
   startAssembly: function (b) { return startAssembly(b); },
-  completeAssembly: function (b) { return completeAssembly(b); }
+  completeAssembly: function (b) { return completeAssembly(b); },
+  startPowderBatch: function (b) { return startPowderBatch(b); },
+  completePowderBatch: function (b) { return completePowderBatch(b); },
+  verifyMainStock: function (b) { return verifyMainStock(b); },
+  verifyPersonalStock: function (b) { return verifyPersonalStock(b); }
 };
 
 function doGet(e) {

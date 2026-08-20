@@ -66,20 +66,41 @@ function appendRow(tabName, rowObj) {
   return rowObj;
 }
 
-function updateRowById(tabName, idColumn, idValue, updates) {
+function writeRowUpdates(tabName, rowIndex, updates) {
   var sheet = getSheet(tabName);
   var headers = TAB_HEADERS[tabName];
-  var existing = findRowById(tabName, idColumn, idValue);
-  if (!existing) {
-    throw new Error('Row not found: ' + tabName + '.' + idColumn + ' = ' + idValue);
-  }
   var idxByHeader = {};
   headers.forEach(function (h, i) {
     idxByHeader[h] = i + 1;
   });
   Object.keys(updates).forEach(function (key) {
     if (!idxByHeader.hasOwnProperty(key)) return;
-    sheet.getRange(existing._rowIndex, idxByHeader[key]).setValue(updates[key]);
+    sheet.getRange(rowIndex, idxByHeader[key]).setValue(updates[key]);
   });
+}
+
+function updateRowById(tabName, idColumn, idValue, updates) {
+  var existing = findRowById(tabName, idColumn, idValue);
+  if (!existing) {
+    throw new Error('Row not found: ' + tabName + '.' + idColumn + ' = ' + idValue);
+  }
+  writeRowUpdates(tabName, existing._rowIndex, updates);
   return findRowById(tabName, idColumn, idValue);
+}
+
+function findRow(tabName, matchFn) {
+  var rows = getAllRows(tabName);
+  for (var i = 0; i < rows.length; i++) {
+    if (matchFn(rows[i])) return rows[i];
+  }
+  return null;
+}
+
+function updateRow(tabName, matchFn, updates) {
+  var existing = findRow(tabName, matchFn);
+  if (!existing) {
+    throw new Error('Row not found in ' + tabName);
+  }
+  writeRowUpdates(tabName, existing._rowIndex, updates);
+  return findRow(tabName, matchFn);
 }

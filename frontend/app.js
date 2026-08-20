@@ -14,6 +14,7 @@ var STAGE_LABELS = {
 var ADMIN_EXTRA_LABELS = {
   orders: 'Order Form',
   settings: 'Model Settings',
+  powderStock: 'Powder Stock',
   users: 'User Management'
 };
 
@@ -22,7 +23,9 @@ var STAGE_VIEW_HANDLERS = {
   settings: 'renderModelSettingsView',
   cutting: 'renderCuttingQueueView',
   bending: 'renderBendingQueueView',
-  assembly: 'renderAssemblyView'
+  assembly: 'renderAssemblyView',
+  powder: 'renderPowderView',
+  powderStock: 'renderPowderStockAdminView'
 };
 
 var state = {
