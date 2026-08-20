@@ -1,23 +1,26 @@
 # Almirah Production Tracker — Setup
 
-This project's source lives here and deploys to Google Apps Script two ways:
-manually via `clasp push` from your machine, or automatically via GitHub
-Actions whenever you push to `main`. Everything below is a one-time setup.
+**Architecture:** the live app pages are static files served by **GitHub
+Pages** (from `docs/`). They talk to **Google Apps Script**, which is
+deployed as a JSON API only (no HTML) backed by the Google Sheet. The
+frontend calls that API with `fetch()`.
+
+```
+docs/            -> served by GitHub Pages (index.html, styles.css, app.js)
+apps-script/src/ -> pushed to Google Apps Script (Code.gs, SheetService.gs, ...)
+```
 
 ## 1. Install dependencies
 
-From this folder:
+From the repo root:
 
 ```
 npm install
 ```
 
-This installs `clasp` (Google's Apps Script CLI) locally.
-
 ## 2. Enable the Apps Script API
 
 Go to https://script.google.com/home/usersettings and turn the toggle **ON**.
-Without this, `clasp` cannot talk to your account at all.
 
 ## 3. Log in with clasp
 
@@ -25,70 +28,63 @@ Without this, `clasp` cannot talk to your account at all.
 npx clasp login
 ```
 
-This opens a browser window — sign in with the Google account that will own
-the spreadsheet (your normal Google account is fine). After you approve, it
-creates a file at `~/.clasprc.json` on your machine. **Never commit this
-file** — it contains your personal auth tokens. `.gitignore` already excludes
-it.
+Opens a browser — sign in with the Google account that will own the
+spreadsheet. Creates `~/.clasprc.json` locally. **Never commit this file**
+(it's already in `.gitignore`).
 
 ## 4. Create the Google Sheet + bound script
 
-1. Go to sheets.google.com → create a **Blank spreadsheet**.
-2. Rename it "Almirah Production Tracker".
-3. `Extensions → Apps Script`. This opens a new, empty script project that's
-   bound to this sheet (this is what lets `SpreadsheetApp.getActiveSpreadsheet()`
-   in the code find the right sheet automatically — no ID to configure).
-4. In the Apps Script editor: gear icon (**Project Settings**) → copy the
-   **Script ID**.
-5. Back in this folder, open `.clasp.json` and replace
-   `PASTE_YOUR_SCRIPT_ID_HERE` with that Script ID.
+1. sheets.google.com → **Blank spreadsheet** → rename to "Almirah Production
+   Tracker".
+2. `Extensions → Apps Script`. This creates a script bound to the sheet, so
+   `SpreadsheetApp.getActiveSpreadsheet()` in the code finds it automatically.
+3. Gear icon (**Project Settings**) → copy the **Script ID**.
+4. Open `apps-script/.clasp.json` and replace `PASTE_YOUR_SCRIPT_ID_HERE`
+   with that Script ID.
 
-## 5. Push the code and build the tabs
+## 5. Push the backend and build the tabs
 
 ```
-npx clasp push
+npm run push
 ```
 
-This uploads every file in `src/` to the script project (confirm overwrite
-if asked). Then:
-
-```
-npx clasp open
-```
-
-opens the project in the browser. In the file dropdown pick `Setup.gs`, then
-click the function dropdown near Run, choose `setupSpreadsheet`, and click
-**Run**. First run asks you to authorize — click **Advanced → Go to
-(project name) (unsafe)**; this warning is normal for your own scripts.
-This creates every tab with correct headers.
+Then `npm run open` to open the project in the browser. Pick `Setup.gs` in
+the file dropdown, choose the `setupSpreadsheet` function, click **Run**.
+First run asks you to authorize — click **Advanced → Go to (project name)
+(unsafe)**, this is expected for your own script. This creates every tab
+with headers.
 
 ## 6. Add your first admin user
 
-Open the `Users` tab in the spreadsheet and add one row:
+In the `Users` tab, add one row:
 
 | UserID | Name | PIN | Role | Stages | Active | CreatedAt |
 |---|---|---|---|---|---|---|
 | u1 | Your Name | 1234 | admin | ["all"] | TRUE | (any value) |
 
-`Stages` must be typed as literal JSON text: `["all"]`, quotes included.
+`Stages` must be literal JSON text: `["all"]`, quotes included.
 
-## 7. Create the first manual deployment
+## 7. Deploy the Apps Script API
 
-Still in the Apps Script editor: **Deploy → New deployment → type: Web app**.
+In the Apps Script editor: **Deploy → New deployment → type: Web app**.
 - Execute as: **Me**
 - Who has access: **Anyone**
 
-Click **Deploy**, copy the **Web app URL** (that's the app link for
-tablets/phones) and also the **Deployment ID** shown on that screen — you'll
-need it in step 9.
+Click **Deploy**. Copy:
+- the **Web app URL** (looks like `https://script.google.com/macros/s/.../exec`)
+- the **Deployment ID** shown on the same screen
 
-Open the URL and confirm you can tap your name, enter the PIN, and see a
-dashboard shell.
+## 8. Point the frontend at the API
 
-## 8. Create the GitHub repo
+Open `docs/app.js`, find:
 
-On github.com, create a new **empty** repository (no README/license), then
-in this folder:
+```js
+var API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+```
+
+Replace with the Web app URL from step 7.
+
+## 9. Create the GitHub repo and push
 
 ```
 git init
@@ -99,36 +95,47 @@ git remote add origin <your-repo-url>
 git push -u origin main
 ```
 
-## 9. Add GitHub Actions secrets
+## 10. Turn on GitHub Pages
 
-In the GitHub repo: **Settings → Secrets and variables → Actions → New
-repository secret**, add two:
+In the GitHub repo: **Settings → Pages**. Under **Build and deployment**,
+set **Source: Deploy from a branch**, **Branch: main**, folder **/docs**.
+Save. GitHub gives you a URL like `https://<you>.github.io/<repo>/` —
+that's the live app link for tablets/phones. It rebuilds automatically
+whenever `docs/` changes on `main`.
 
-- `CLASP_CREDENTIALS` — paste the **entire contents** of your local
-  `~/.clasprc.json` file (the one created in step 3).
-- `DEPLOYMENT_ID` — the Deployment ID you copied in step 7.
+## 11. Add GitHub Actions secrets (for auto-deploying the backend)
 
-## 10. Confirm auto-deploy works
+**Settings → Secrets and variables → Actions → New repository secret**:
 
-Make any small change under `src/`, then:
+- `CLASP_CREDENTIALS` — full contents of your local `~/.clasprc.json`.
+- `DEPLOYMENT_ID` — the Deployment ID from step 7.
 
-```
-git add -A
-git commit -m "test auto deploy"
-git push
-```
+## 12. Confirm everything is wired up
 
-Check the **Actions** tab on GitHub — the "Deploy to Apps Script" workflow
-should run and finish green. Refresh the web app URL from step 7 to see the
-change live. The URL never changes between deploys, since the workflow
-updates that same Deployment ID rather than creating a new one.
+Open the GitHub Pages URL from step 10, tap your name, enter the PIN, and
+confirm the dashboard shell loads with your stage cards.
+
+For future changes: edit files under `apps-script/src/` and/or `docs/`,
+commit, and push to `main`.
+- Changes under `docs/` go live automatically via GitHub Pages.
+- Changes under `apps-script/src/` are picked up by the "Deploy to Apps
+  Script" GitHub Action, which pushes to the same script and updates the
+  same Deployment ID — the API URL never changes.
 
 ## Notes
 
-- PINs are stored in plain text in the `Users` tab, matching the "shop-floor
-  PIN pad" login you chose — this is fine for an internal tool on trusted
-  tablets, but don't reuse these PINs anywhere sensitive.
-- `CLASP_CREDENTIALS` is a personal OAuth refresh token for whichever Google
-  account ran `clasp login` — treat that GitHub secret as sensitive as a
-  password, and rotate it (re-run `clasp login`, update the secret) if you
-  ever suspect it leaked.
+- PINs are stored in plain text in the `Users` tab, matching the shop-floor
+  PIN pad you chose — fine for an internal tool on trusted tablets, don't
+  reuse these PINs anywhere sensitive.
+- `CLASP_CREDENTIALS` is a personal OAuth refresh token — treat it like a
+  password. Rotate it (re-run `clasp login`, update the secret) if you ever
+  suspect it leaked.
+- The Apps Script API is reachable by anyone with the URL (`access: Anyone`)
+  since the frontend now calls it cross-origin with no Google login — every
+  write action re-validates the user's PIN/role server-side (see `Auth.gs`),
+  it doesn't trust the frontend's session alone.
+- Cross-origin requests to Apps Script avoid CORS preflight by using
+  `Content-Type: text/plain` on POST bodies (parsed as JSON server-side) and
+  plain query-string GETs — that's why `app.js`'s `apiPost`/`apiGet` are
+  written the way they are; changing them to send `application/json`
+  headers will break in the browser.

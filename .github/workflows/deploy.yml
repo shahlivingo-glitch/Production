@@ -22,9 +22,11 @@ jobs:
           CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
 
       - name: Push source to Apps Script
+        working-directory: apps-script
         run: npx clasp push --force
 
       - name: Update the live web app deployment
+        working-directory: apps-script
         run: npx clasp deploy -i "$DEPLOYMENT_ID" -d "Deploy ${{ github.sha }}"
         env:
           DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}

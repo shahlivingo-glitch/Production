@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Almirah Production Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <div class="topbar" id="topbar" style="display:none;">
+      <div class="topbar-title">Almirah Tracker</div>
+      <div class="topbar-user">
+        <span id="topbar-username"></span>
+        <button class="btn btn-secondary" id="logout-btn" style="min-height:36px;padding:8px 14px;">Log out</button>
+      </div>
+    </div>
+
+    <div class="main" id="login-root">
+      <div class="guide-banner">Tap your name, then enter your 4-digit PIN to start your shift.</div>
+      <div id="name-step">
+        <div class="center-col"><h2>Who's working?</h2></div>
+        <div class="name-grid" id="name-grid"></div>
+      </div>
+      <div id="pin-step" style="display:none;">
+        <div class="center-col">
+          <h2 id="pin-step-name"></h2>
+          <div class="pin-dots" id="pin-dots"></div>
+        </div>
+        <div class="pin-pad" id="pin-pad"></div>
+        <div class="error-text" id="login-error" style="display:none;"></div>
+        <div class="center-col" style="margin-top:16px;">
+          <button class="btn btn-secondary" id="pin-back-btn">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="dashboard-root" class="main" style="display:none;"></div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
