@@ -165,7 +165,11 @@ function onLoginResult(result) {
     return;
   }
   localStorage.setItem(SESSION_KEY, JSON.stringify(result.session));
-  renderDashboard(result.session);
+  if (typeof hasSeenDemo === 'function' && typeof renderDemoIntro === 'function' && !hasSeenDemo(result.session.userId)) {
+    renderDemoIntro(result.session);
+  } else {
+    renderDashboard(result.session);
+  }
 }
 
 function goToDashboard() {
