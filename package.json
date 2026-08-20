@@ -1,0 +1,14 @@
+{
+  "name": "almirah-production-tracker",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "login": "clasp login",
+    "push": "clasp push",
+    "open": "clasp open",
+    "deploy": "clasp deploy"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  }
+}
