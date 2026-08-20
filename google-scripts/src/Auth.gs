@@ -1,7 +1,15 @@
+function isActiveValue(value) {
+  return value === true || String(value).trim().toUpperCase() === 'TRUE';
+}
+
+function normalizeRole(role) {
+  return String(role || '').trim().toLowerCase();
+}
+
 function getUsersForLogin() {
   return getAllRows('Users')
     .filter(function (u) {
-      return u.Active === true || u.Active === 'TRUE';
+      return isActiveValue(u.Active);
     })
     .map(function (u) {
       return { userId: u.UserID, name: u.Name };
@@ -13,7 +21,7 @@ function validatePinAndLogin(userId, pin) {
   if (!user) {
     return { ok: false, error: 'User not found' };
   }
-  if (user.Active !== true && user.Active !== 'TRUE') {
+  if (!isActiveValue(user.Active)) {
     return { ok: false, error: 'User is not active' };
   }
   if (String(user.PIN) !== String(pin)) {
@@ -24,7 +32,7 @@ function validatePinAndLogin(userId, pin) {
     session: {
       userId: user.UserID,
       name: user.Name,
-      role: user.Role,
+      role: normalizeRole(user.Role),
       stages: parseJsonSafe(user.Stages, [])
     }
   };
@@ -32,11 +40,11 @@ function validatePinAndLogin(userId, pin) {
 
 function requirePermission(userId, stage) {
   var user = findRowById('Users', 'UserID', userId);
-  if (!user || (user.Active !== true && user.Active !== 'TRUE')) {
+  if (!user || !isActiveValue(user.Active)) {
     throw new Error('Not authorized: inactive or unknown user');
   }
   var stages = parseJsonSafe(user.Stages, []);
-  var allowed = user.Role === 'admin' || stages.indexOf('all') !== -1 || stages.indexOf(stage) !== -1;
+  var allowed = normalizeRole(user.Role) === 'admin' || stages.indexOf('all') !== -1 || stages.indexOf(stage) !== -1;
   if (!allowed) {
     throw new Error('Not authorized for stage: ' + stage);
   }
