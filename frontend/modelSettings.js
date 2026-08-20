@@ -8,7 +8,8 @@ function emptyModelForm() {
     bomRows: [{ item: '', qty: '' }],
     cuttingTimeTarget: '',
     bendingTimeTarget: '',
-    assemblyTimeTarget: ''
+    assemblyTimeTarget: '',
+    fittingTimeTarget: ''
   };
 }
 
@@ -30,7 +31,8 @@ function modelToForm(m) {
     bomRows: bomRows,
     cuttingTimeTarget: m.cuttingTimeTarget,
     bendingTimeTarget: m.bendingTimeTarget,
-    assemblyTimeTarget: m.assemblyTimeTarget
+    assemblyTimeTarget: m.assemblyTimeTarget,
+    fittingTimeTarget: m.fittingTimeTarget
   };
 }
 
@@ -77,7 +79,7 @@ function renderModelSettingsList(models) {
     card.className = 'card list-row';
     card.innerHTML =
       '<div class="list-row-title">' + m.modelNoName + '</div>' +
-      '<div class="muted">Cutting ' + m.cuttingTimeTarget + 'm · Bending ' + m.bendingTimeTarget + 'm · Assembly ' + m.assemblyTimeTarget + 'm</div>';
+      '<div class="muted">Cutting ' + m.cuttingTimeTarget + 'm · Bending ' + m.bendingTimeTarget + 'm · Assembly ' + m.assemblyTimeTarget + 'm · Fitting ' + m.fittingTimeTarget + 'm</div>';
     card.addEventListener('click', function () {
       modelForm = modelToForm(m);
       renderModelSettingsForm();
@@ -149,6 +151,7 @@ function renderModelSettingsForm() {
   root.appendChild(buildNumberField('Cutting', modelForm.cuttingTimeTarget, function (v) { modelForm.cuttingTimeTarget = v; }));
   root.appendChild(buildNumberField('Bending', modelForm.bendingTimeTarget, function (v) { modelForm.bendingTimeTarget = v; }));
   root.appendChild(buildNumberField('Assembly', modelForm.assemblyTimeTarget, function (v) { modelForm.assemblyTimeTarget = v; }));
+  root.appendChild(buildNumberField('Fitting', modelForm.fittingTimeTarget, function (v) { modelForm.fittingTimeTarget = v; }));
 
   var saveBtn = document.createElement('button');
   saveBtn.className = 'btn btn-primary btn-block';
@@ -258,7 +261,8 @@ function submitModelForm() {
     bom: bom,
     cuttingTimeTarget: modelForm.cuttingTimeTarget,
     bendingTimeTarget: modelForm.bendingTimeTarget,
-    assemblyTimeTarget: modelForm.assemblyTimeTarget
+    assemblyTimeTarget: modelForm.assemblyTimeTarget,
+    fittingTimeTarget: modelForm.fittingTimeTarget
   }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     renderModelSettingsView();

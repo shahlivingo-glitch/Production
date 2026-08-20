@@ -14,7 +14,9 @@ var GET_ACTIONS = {
   assemblyOrderDetail: function (p) { return getAssemblyOrderDetail(p.userId, p.orderId); },
   powderQueue: function (p) { return listPowderQueue(p.userId); },
   powderStockSummary: function (p) { return getPowderStockSummary(p.userId); },
-  personalStockList: function (p) { return listAllPersonalStock(p.userId); }
+  personalStockList: function (p) { return listAllPersonalStock(p.userId); },
+  readyFittingOrders: function (p) { return listReadyFittingOrders(p.userId); },
+  fittingOrderDetail: function (p) { return getFittingOrderDetail(p.userId, p.orderId); }
 };
 
 var POST_ACTIONS = {
@@ -32,7 +34,10 @@ var POST_ACTIONS = {
   startPowderBatch: function (b) { return startPowderBatch(b); },
   completePowderBatch: function (b) { return completePowderBatch(b); },
   verifyMainStock: function (b) { return verifyMainStock(b); },
-  verifyPersonalStock: function (b) { return verifyPersonalStock(b); }
+  verifyPersonalStock: function (b) { return verifyPersonalStock(b); },
+  startFitting: function (b) { return startFitting(b); },
+  completeFitting: function (b) { return completeFitting(b); },
+  confirmFittingReturnByChecker: function (b) { return confirmFittingReturnByChecker(b); }
 };
 
 function doGet(e) {

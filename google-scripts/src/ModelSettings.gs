@@ -7,6 +7,7 @@ function modelRowToObject(m) {
     cuttingTimeTarget: m.CuttingTimeTarget,
     bendingTimeTarget: m.BendingTimeTarget,
     assemblyTimeTarget: m.AssemblyTimeTarget,
+    fittingTimeTarget: m.FittingTimeTarget,
     updatedAt: m.UpdatedAt,
     updatedBy: m.UpdatedBy
   };
@@ -41,6 +42,7 @@ function saveModel(payload) {
     CuttingTimeTarget: Number(payload.cuttingTimeTarget) || 0,
     BendingTimeTarget: Number(payload.bendingTimeTarget) || 0,
     AssemblyTimeTarget: Number(payload.assemblyTimeTarget) || 0,
+    FittingTimeTarget: Number(payload.fittingTimeTarget) || 0,
     UpdatedAt: nowIso(),
     UpdatedBy: payload.userId
   };
