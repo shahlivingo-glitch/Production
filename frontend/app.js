@@ -26,7 +26,8 @@ var STAGE_VIEW_HANDLERS = {
   assembly: 'renderAssemblyView',
   powder: 'renderPowderView',
   powderStock: 'renderPowderStockAdminView',
-  fitting: 'renderFittingView'
+  fitting: 'renderFittingView',
+  checker: 'renderQCView'
 };
 
 var state = {

@@ -1,3 +1,12 @@
+function isPowderColourReadyForFitting(orderId, colour, passedQueueIds) {
+  var rows = getAllRows('PowderQueue').filter(function (r) {
+    return r.OrderID === orderId && r.Colour === colour;
+  });
+  return rows.some(function (r) {
+    return passedQueueIds[r.QueueID];
+  });
+}
+
 function listReadyFittingOrders(userId) {
   requirePermission(userId, 'fitting');
 
@@ -8,12 +17,11 @@ function listReadyFittingOrders(userId) {
     }
   });
 
-  var powderStatusByOrder = {};
-  getAllRows('PowderQueue').forEach(function (r) {
-    if (!powderStatusByOrder[r.OrderID]) {
-      powderStatusByOrder[r.OrderID] = [];
-    }
-    powderStatusByOrder[r.OrderID].push(r.Status);
+  var passedQueueIds = {};
+  getAllRows('QCLog').filter(function (r) {
+    return r.Stage === 'powder' && r.Result === 'pass';
+  }).forEach(function (r) {
+    passedQueueIds[r.ItemRef] = true;
   });
 
   var results = [];
@@ -21,14 +29,14 @@ function listReadyFittingOrders(userId) {
     if (completedOrderIds[order.OrderID]) {
       return;
     }
-    var statuses = powderStatusByOrder[order.OrderID];
-    if (!statuses || statuses.length === 0) {
+    var colours = Object.keys(parseJsonSafe(order.ColourPlan, {}));
+    if (colours.length === 0) {
       return;
     }
-    var allDone = statuses.every(function (s) {
-      return s === 'done';
+    var allReady = colours.every(function (colour) {
+      return isPowderColourReadyForFitting(order.OrderID, colour, passedQueueIds);
     });
-    if (!allDone) {
+    if (!allReady) {
       return;
     }
 
