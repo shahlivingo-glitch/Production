@@ -132,8 +132,37 @@ function addToBendingQueue(orderId, partName, sheetCode, addQty, priority) {
   }
 }
 
+function buildCuttingQueueItem(row, orders) {
+  var model = findRowById('ModelSettings', 'ModelNoName', row.ModelNoName);
+  var order = orders[row.OrderID];
+  var sheetCode = canonicalSheetCode(order, model, row.SheetSequencePos, row.SheetCode);
+  var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
+  var partsMap = partsForSheet(partsPerSheet, sheetCode);
+  var progress = cuttingProgressForRow(row.LogID, row.OrderID);
+
+  return {
+    logId: row.LogID,
+    orderId: row.OrderID,
+    modelNoName: row.ModelNoName,
+    sheetCode: sheetCode,
+    sheetSequencePos: row.SheetSequencePos,
+    sheetPosition: progress.sheetPosition,
+    totalSheetsInOrder: progress.totalSheetsInOrder,
+    status: row.Status,
+    startedAt: row.StartedAt,
+    customerName: order ? order.CustomerName : '',
+    cuttingTimeTarget: effectiveCuttingTarget(model, sheetCode, row.SheetSequencePos, row.UnitIndex),
+    includesSetup: isFirstCuttingJobForOrder(row.SheetSequencePos, row.UnitIndex),
+    parts: Object.keys(partsMap).map(function (name) {
+      return name + ' x' + (Number(partsMap[name]) || 0);
+    }),
+    expectedQty: totalPartsQty(partsMap)
+  };
+}
+
 function getCuttingQueue(userId) {
-  requirePermission(userId, 'cutting');
+  var user = requirePermission(userId, 'cutting');
+  var isAdmin = normalizeRole(user.Role) === 'admin';
 
   var orders = getOrdersById();
   var rows = getAllRows('CuttingLog').filter(function (r) {
@@ -155,36 +184,31 @@ function getCuttingQueue(userId) {
   var mine = rows.filter(function (r) {
     return r.Status === 'in-progress' && r.OperatorID === userId;
   });
-  var next = mine.length ? mine[0] : rows[0];
-  if (!next) {
-    return null;
+  if (mine.length) {
+    return buildCuttingQueueItem(mine[0], orders);
   }
 
-  var model = findRowById('ModelSettings', 'ModelNoName', next.ModelNoName);
-  var order = orders[next.OrderID];
-  var sheetCode = canonicalSheetCode(order, model, next.SheetSequencePos, next.SheetCode);
-  var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
-  var partsMap = partsForSheet(partsPerSheet, sheetCode);
-  var progress = cuttingProgressForRow(next.LogID, next.OrderID);
+  var sawBlockedOrder = false;
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var order = orders[row.OrderID];
+    var model = order ? findRowById('ModelSettings', 'ModelNoName', order.ModelNoName) : null;
 
-  return {
-    logId: next.LogID,
-    orderId: next.OrderID,
-    modelNoName: next.ModelNoName,
-    sheetCode: sheetCode,
-    sheetSequencePos: next.SheetSequencePos,
-    sheetPosition: progress.sheetPosition,
-    totalSheetsInOrder: progress.totalSheetsInOrder,
-    status: next.Status,
-    startedAt: next.StartedAt,
-    customerName: order ? order.CustomerName : '',
-    cuttingTimeTarget: effectiveCuttingTarget(model, sheetCode, next.SheetSequencePos, next.UnitIndex),
-    includesSetup: isFirstCuttingJobForOrder(next.SheetSequencePos, next.UnitIndex),
-    parts: Object.keys(partsMap).map(function (name) {
-      return name + ' x' + (Number(partsMap[name]) || 0);
-    }),
-    expectedQty: totalPartsQty(partsMap)
-  };
+    if (orderNeedsPlanning(order, model)) {
+      if (isAdmin) {
+        return { needsPlanning: true, orderId: row.OrderID, modelNoName: row.ModelNoName };
+      }
+      sawBlockedOrder = true;
+      continue;
+    }
+    return buildCuttingQueueItem(row, orders);
+  }
+
+  if (sawBlockedOrder) {
+    return { needsPlanning: true, waitingOnAdmin: true };
+  }
+
+  return null;
 }
 
 function startCuttingSheet(payload) {

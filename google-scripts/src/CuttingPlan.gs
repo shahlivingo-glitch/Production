@@ -1,3 +1,19 @@
+function modelRequiresPlanning(model) {
+  if (!model) {
+    return false;
+  }
+  var req = parseJsonSafe(model.PartRequirement, {});
+  return Object.keys(req).length > 0;
+}
+
+function orderNeedsPlanning(order, model) {
+  if (!order || !modelRequiresPlanning(model)) {
+    return false;
+  }
+  var resolved = parseJsonSafe(order.ResolvedSheetSequence, []);
+  return resolved.length === 0;
+}
+
 function getOrderPlanContext(userId, orderId) {
   requirePermission(userId, 'settings');
   var order = findRowById('Orders', 'OrderID', orderId);

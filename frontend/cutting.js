@@ -56,6 +56,29 @@ function renderCuttingQueueContent(sheet) {
     return;
   }
 
+  if (sheet.needsPlanning) {
+    if (sheet.waitingOnAdmin) {
+      var waiting = document.createElement('div');
+      waiting.className = 'alert-banner';
+      waiting.textContent = 'The next order needs a cutting plan before it can be cut — ask an admin to open Plan Cutting for it.';
+      root.appendChild(waiting);
+    } else {
+      var notice = document.createElement('div');
+      notice.className = 'alert-banner';
+      notice.textContent = 'This order (' + sheet.orderId + ' — ' + sheet.modelNoName + ') needs a cutting plan before it can be cut.';
+      root.appendChild(notice);
+
+      var planBtn = document.createElement('button');
+      planBtn.className = 'btn btn-primary btn-block';
+      planBtn.textContent = 'Plan Cutting Now';
+      planBtn.addEventListener('click', function () {
+        renderPlanCuttingView(sheet.orderId, renderCuttingQueueView);
+      });
+      root.appendChild(planBtn);
+    }
+    return;
+  }
+
   var card = document.createElement('div');
   card.className = 'card';
   card.innerHTML =

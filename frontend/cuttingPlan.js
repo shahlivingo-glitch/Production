@@ -1,13 +1,13 @@
 var planStockState = {};
 
-function renderPlanCuttingView(orderId) {
+function renderPlanCuttingView(orderId, onDone) {
   var root = el('dashboard-root');
   root.innerHTML = '';
   root.appendChild(buildViewHeader('Plan Cutting'));
 
   apiGet('orderPlanContext', { userId: currentSession.userId, orderId: orderId }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
-    renderPlanCuttingForm(result.data);
+    renderPlanCuttingForm(result.data, onDone);
   }).catch(showFatalError);
 }
 
@@ -15,7 +15,7 @@ function sheetLabel(context, code) {
   return context.sheetSizes[code] ? code + ' (' + context.sheetSizes[code] + ')' : code;
 }
 
-function renderPlanCuttingForm(context) {
+function renderPlanCuttingForm(context, onDone) {
   var root = el('dashboard-root');
   root.innerHTML = '';
   root.appendChild(buildViewHeader('Plan Cutting'));
@@ -68,13 +68,13 @@ function renderPlanCuttingForm(context) {
       availableStock: stock
     }).then(function (result) {
       if (!result.ok) return showFatalError(result.error);
-      renderPlanPreview(context, result.data);
+      renderPlanPreview(context, result.data, onDone);
     }).catch(showFatalError);
   });
   root.appendChild(computeBtn);
 }
 
-function renderPlanPreview(context, plan) {
+function renderPlanPreview(context, plan, onDone) {
   var root = el('dashboard-root');
   root.innerHTML = '';
   root.appendChild(buildViewHeader('Cutting Plan — ' + context.orderId));
@@ -124,7 +124,7 @@ function renderPlanPreview(context, plan) {
     }).then(function (result) {
       if (!result.ok) return showFatalError(result.error);
       alert('Cutting plan saved for ' + context.orderId + ' — ' + result.data.sheetsPlanned + ' sheets.');
-      renderOrderFormView();
+      (onDone || renderOrderFormView)();
     }).catch(showFatalError);
   });
   root.appendChild(confirmBtn);
@@ -133,6 +133,6 @@ function renderPlanPreview(context, plan) {
   backBtn.className = 'btn btn-secondary btn-block';
   backBtn.style.marginTop = '10px';
   backBtn.textContent = 'Adjust Stock';
-  backBtn.addEventListener('click', function () { renderPlanCuttingView(context.orderId); });
+  backBtn.addEventListener('click', function () { renderPlanCuttingView(context.orderId, onDone); });
   root.appendChild(backBtn);
 }
