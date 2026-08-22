@@ -1,6 +1,8 @@
 var modelForm = null;
 var bendingWrapEl = null;
 var bendingSequenceWrapEl = null;
+var partRequirementWrapEl = null;
+var sheetSizesWrapEl = null;
 
 function getAllPartNamesFromSheets() {
   var names = {};
@@ -13,12 +15,30 @@ function getAllPartNamesFromSheets() {
   return Object.keys(names).sort();
 }
 
+function getAllSheetCodesFromRows() {
+  var codes = {};
+  modelForm.sheetRows.forEach(function (row) {
+    var code = row.code.trim();
+    if (code) codes[code] = true;
+  });
+  return Object.keys(codes).sort();
+}
+
 function refreshPartDependentSections() {
   if (bendingWrapEl) {
     renderBendingRows(bendingWrapEl);
   }
   if (bendingSequenceWrapEl) {
     renderBendingSequenceRows(bendingSequenceWrapEl);
+  }
+  if (partRequirementWrapEl) {
+    renderPartRequirementRows(partRequirementWrapEl);
+  }
+}
+
+function refreshSheetDependentSections() {
+  if (sheetSizesWrapEl) {
+    renderSheetSizesRows(sheetSizesWrapEl);
   }
 }
 
@@ -27,7 +47,9 @@ function emptyModelForm() {
     modelNoName: '',
     locked: false,
     sheetRows: [{ code: '', parts: '', minutes: '' }],
+    sheetSizeRows: [{ code: '', dimension: '' }],
     bomRows: [{ item: '', qty: '' }],
+    partRequirementRows: [{ partName: '', qty: '' }],
     bendingSequence: [],
     bendingRows: [{ partName: '', minutes: '' }],
     assemblyTimeTarget: '',
@@ -59,11 +81,23 @@ function modelToForm(m) {
   });
   if (sheetRows.length === 0) sheetRows.push({ code: '', parts: '', minutes: '' });
 
+  var sheetSizes = (m.sheetSizes && typeof m.sheetSizes === 'object' && !Array.isArray(m.sheetSizes)) ? m.sheetSizes : {};
+  var sheetSizeRows = Object.keys(sheetSizes).map(function (code) {
+    return { code: code, dimension: sheetSizes[code] };
+  });
+  if (sheetSizeRows.length === 0) sheetSizeRows.push({ code: '', dimension: '' });
+
   var bom = (m.bom && typeof m.bom === 'object' && !Array.isArray(m.bom)) ? m.bom : {};
   var bomRows = Object.keys(bom).map(function (item) {
     return { item: item, qty: bom[item] };
   });
   if (bomRows.length === 0) bomRows.push({ item: '', qty: '' });
+
+  var partRequirement = (m.partRequirement && typeof m.partRequirement === 'object' && !Array.isArray(m.partRequirement)) ? m.partRequirement : {};
+  var partRequirementRows = Object.keys(partRequirement).map(function (partName) {
+    return { partName: partName, qty: partRequirement[partName] };
+  });
+  if (partRequirementRows.length === 0) partRequirementRows.push({ partName: '', qty: '' });
 
   var bendingTargets = (m.bendingTimeTargets && typeof m.bendingTimeTargets === 'object' && !Array.isArray(m.bendingTimeTargets)) ? m.bendingTimeTargets : {};
   var bendingRows = Object.keys(bendingTargets).map(function (partName) {
@@ -75,7 +109,9 @@ function modelToForm(m) {
     modelNoName: m.modelNoName,
     locked: true,
     sheetRows: sheetRows,
+    sheetSizeRows: sheetSizeRows,
     bomRows: bomRows,
+    partRequirementRows: partRequirementRows,
     bendingSequence: Array.isArray(m.bendingSequence) ? m.bendingSequence.slice() : [],
     bendingRows: bendingRows,
     assemblyTimeTarget: m.assemblyTimeTarget,
@@ -172,6 +208,30 @@ function renderModelSettingsForm() {
   });
   root.appendChild(addSheetBtn);
 
+  var sheetSizesTitle = document.createElement('div');
+  sheetSizesTitle.className = 'section-title';
+  sheetSizesTitle.textContent = 'Sheet Sizes';
+  root.appendChild(sheetSizesTitle);
+
+  var sheetSizesHint = document.createElement('div');
+  sheetSizesHint.className = 'muted';
+  sheetSizesHint.style.marginBottom = '10px';
+  sheetSizesHint.textContent = 'Physical dimensions of each raw sheet pattern — used to match against stock on hand when planning a cutting run.';
+  root.appendChild(sheetSizesHint);
+
+  sheetSizesWrapEl = document.createElement('div');
+  root.appendChild(sheetSizesWrapEl);
+  renderSheetSizesRows(sheetSizesWrapEl);
+
+  var addSheetSizeBtn = document.createElement('button');
+  addSheetSizeBtn.className = 'btn btn-secondary add-row-btn';
+  addSheetSizeBtn.textContent = '+ Add Sheet Size';
+  addSheetSizeBtn.addEventListener('click', function () {
+    modelForm.sheetSizeRows.push({ code: '', dimension: '' });
+    renderSheetSizesRows(sheetSizesWrapEl);
+  });
+  root.appendChild(addSheetSizeBtn);
+
   var bomTitle = document.createElement('div');
   bomTitle.className = 'section-title';
   bomTitle.textContent = 'Bill of Materials (per unit)';
@@ -189,6 +249,30 @@ function renderModelSettingsForm() {
     renderBomRows(bomWrap);
   });
   root.appendChild(addBomBtn);
+
+  var partReqTitle = document.createElement('div');
+  partReqTitle.className = 'section-title';
+  partReqTitle.textContent = 'Part Requirement (per unit)';
+  root.appendChild(partReqTitle);
+
+  var partReqHint = document.createElement('div');
+  partReqHint.className = 'muted';
+  partReqHint.style.marginBottom = '10px';
+  partReqHint.textContent = 'Total of each part one finished unit needs, independent of which sheet pattern produces it — the ground truth the cutting plan optimizer targets.';
+  root.appendChild(partReqHint);
+
+  partRequirementWrapEl = document.createElement('div');
+  root.appendChild(partRequirementWrapEl);
+  renderPartRequirementRows(partRequirementWrapEl);
+
+  var addPartReqBtn = document.createElement('button');
+  addPartReqBtn.className = 'btn btn-secondary add-row-btn';
+  addPartReqBtn.textContent = '+ Add Part Requirement';
+  addPartReqBtn.addEventListener('click', function () {
+    modelForm.partRequirementRows.push({ partName: '', qty: '' });
+    renderPartRequirementRows(partRequirementWrapEl);
+  });
+  root.appendChild(addPartReqBtn);
 
   var bendingSeqTitle = document.createElement('div');
   bendingSeqTitle.className = 'section-title';
@@ -254,7 +338,10 @@ function renderSheetRows(wrap) {
     codeInput.placeholder = 'Sheet code (e.g. A)';
     codeInput.value = row.code;
     codeInput.style.maxWidth = '90px';
-    codeInput.addEventListener('input', function (e) { row.code = e.target.value; });
+    codeInput.addEventListener('input', function (e) {
+      row.code = e.target.value;
+      refreshSheetDependentSections();
+    });
 
     var partsInput = document.createElement('input');
     partsInput.placeholder = 'Side:2, Palla Support:3';
@@ -282,6 +369,106 @@ function renderSheetRows(wrap) {
       removeBtn.addEventListener('click', function () {
         modelForm.sheetRows.splice(i, 1);
         renderSheetRows(wrap);
+      });
+      line.appendChild(removeBtn);
+    }
+
+    wrap.appendChild(line);
+  });
+}
+
+function renderSheetSizesRows(wrap) {
+  wrap.innerHTML = '';
+  modelForm.sheetSizeRows.forEach(function (row, i) {
+    var line = document.createElement('div');
+    line.className = 'dynamic-row';
+
+    var codeSelect = document.createElement('select');
+    var availableCodes = getAllSheetCodesFromRows();
+    if (row.code && availableCodes.indexOf(row.code) === -1) {
+      availableCodes = [row.code].concat(availableCodes);
+    }
+
+    var placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = availableCodes.length ? '-- choose sheet --' : 'Add a sheet code above first';
+    codeSelect.appendChild(placeholderOpt);
+
+    availableCodes.forEach(function (code) {
+      var opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = code;
+      codeSelect.appendChild(opt);
+    });
+    codeSelect.value = row.code;
+    codeSelect.addEventListener('change', function (e) { row.code = e.target.value; });
+
+    var dimensionInput = document.createElement('input');
+    dimensionInput.placeholder = 'e.g. 1250x2500';
+    dimensionInput.value = row.dimension;
+    dimensionInput.addEventListener('input', function (e) { row.dimension = e.target.value; });
+
+    line.appendChild(codeSelect);
+    line.appendChild(dimensionInput);
+
+    if (modelForm.sheetSizeRows.length > 1) {
+      var removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-row-btn';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', function () {
+        modelForm.sheetSizeRows.splice(i, 1);
+        renderSheetSizesRows(wrap);
+      });
+      line.appendChild(removeBtn);
+    }
+
+    wrap.appendChild(line);
+  });
+}
+
+function renderPartRequirementRows(wrap) {
+  wrap.innerHTML = '';
+  modelForm.partRequirementRows.forEach(function (row, i) {
+    var line = document.createElement('div');
+    line.className = 'dynamic-row';
+
+    var nameSelect = document.createElement('select');
+    var availableParts = getAllPartNamesFromSheets();
+    if (row.partName && availableParts.indexOf(row.partName) === -1) {
+      availableParts = [row.partName].concat(availableParts);
+    }
+
+    var placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = availableParts.length ? '-- choose part --' : 'Add parts to a sheet first';
+    nameSelect.appendChild(placeholderOpt);
+
+    availableParts.forEach(function (partName) {
+      var opt = document.createElement('option');
+      opt.value = partName;
+      opt.textContent = partName;
+      nameSelect.appendChild(opt);
+    });
+    nameSelect.value = row.partName;
+    nameSelect.addEventListener('change', function (e) { row.partName = e.target.value; });
+
+    var qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.placeholder = 'Qty per unit';
+    qtyInput.value = row.qty;
+    qtyInput.style.maxWidth = '110px';
+    qtyInput.addEventListener('input', function (e) { row.qty = e.target.value; });
+
+    line.appendChild(nameSelect);
+    line.appendChild(qtyInput);
+
+    if (modelForm.partRequirementRows.length > 1) {
+      var removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-row-btn';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', function () {
+        modelForm.partRequirementRows.splice(i, 1);
+        renderPartRequirementRows(wrap);
       });
       line.appendChild(removeBtn);
     }
@@ -456,11 +643,25 @@ function submitModelForm() {
     cuttingTimeTargets[code] = Number(row.minutes) || 0;
   });
 
+  var sheetSizes = {};
+  modelForm.sheetSizeRows.forEach(function (row) {
+    var code = row.code.trim();
+    if (!code) return;
+    sheetSizes[code] = row.dimension.trim();
+  });
+
   var bom = {};
   modelForm.bomRows.forEach(function (row) {
     var item = row.item.trim();
     if (!item) return;
     bom[item] = Number(row.qty) || 0;
+  });
+
+  var partRequirement = {};
+  modelForm.partRequirementRows.forEach(function (row) {
+    var partName = row.partName.trim();
+    if (!partName) return;
+    partRequirement[partName] = Number(row.qty) || 0;
   });
 
   var bendingTimeTargets = {};
@@ -475,7 +676,9 @@ function submitModelForm() {
     modelNoName: modelForm.modelNoName.trim(),
     sheetSequence: sheetSequence,
     partsPerSheet: partsPerSheet,
+    sheetSizes: sheetSizes,
     bom: bom,
+    partRequirement: partRequirement,
     cuttingTimeTargets: cuttingTimeTargets,
     bendingSequence: modelForm.bendingSequence,
     bendingTimeTargets: bendingTimeTargets,

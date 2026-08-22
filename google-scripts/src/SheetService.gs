@@ -1,6 +1,6 @@
 var TAB_HEADERS = {
   Orders: ['OrderID', 'ModelNoName', 'Qty', 'DXFRefNo', 'ColourPlan', 'DeliveryDeadline', 'CustomerName', 'Status', 'CreatedAt', 'CreatedBy'],
-  ModelSettings: ['ModelNoName', 'SheetSequence', 'PartsPerSheet', 'BOM', 'CuttingTimeTargets', 'BendingSequence', 'BendingTimeTargets', 'AssemblyTimeTarget', 'FittingTimeTarget', 'UpdatedAt', 'UpdatedBy'],
+  ModelSettings: ['ModelNoName', 'SheetSequence', 'PartsPerSheet', 'PartRequirement', 'SheetSizes', 'BOM', 'CuttingTimeTargets', 'BendingSequence', 'BendingTimeTargets', 'AssemblyTimeTarget', 'FittingTimeTarget', 'UpdatedAt', 'UpdatedBy'],
   AppSettings: ['CuttingSetupTime', 'BendingSetupTime', 'AssemblySetupTime', 'FittingSetupTime', 'UpdatedAt', 'UpdatedBy'],
   CuttingLog: ['LogID', 'OrderID', 'ModelNoName', 'SheetCode', 'SheetSequencePos', 'UnitIndex', 'Status', 'StartedAt', 'CompletedAt', 'OperatorID', 'Points'],
   CuttingQC: ['QCID', 'OrderID', 'SheetCode', 'CheckedQty', 'ExpectedQty', 'Result', 'FailAction', 'CheckerID', 'Timestamp'],
