@@ -49,7 +49,8 @@ function partsMapToDisplayText(rawParts) {
 
 function modelToForm(m) {
   var cuttingTargets = m.cuttingTimeTargets || {};
-  var sheetRows = m.sheetSequence.map(function (code) {
+  var sheetSequence = Array.isArray(m.sheetSequence) ? m.sheetSequence : [];
+  var sheetRows = sheetSequence.map(function (code) {
     return {
       code: code,
       parts: partsMapToDisplayText(m.partsPerSheet[code]),
@@ -58,12 +59,13 @@ function modelToForm(m) {
   });
   if (sheetRows.length === 0) sheetRows.push({ code: '', parts: '', minutes: '' });
 
-  var bomRows = Object.keys(m.bom).map(function (item) {
-    return { item: item, qty: m.bom[item] };
+  var bom = (m.bom && typeof m.bom === 'object' && !Array.isArray(m.bom)) ? m.bom : {};
+  var bomRows = Object.keys(bom).map(function (item) {
+    return { item: item, qty: bom[item] };
   });
   if (bomRows.length === 0) bomRows.push({ item: '', qty: '' });
 
-  var bendingTargets = m.bendingTimeTargets || {};
+  var bendingTargets = (m.bendingTimeTargets && typeof m.bendingTimeTargets === 'object' && !Array.isArray(m.bendingTimeTargets)) ? m.bendingTimeTargets : {};
   var bendingRows = Object.keys(bendingTargets).map(function (partName) {
     return { partName: partName, minutes: bendingTargets[partName] };
   });
@@ -74,7 +76,7 @@ function modelToForm(m) {
     locked: true,
     sheetRows: sheetRows,
     bomRows: bomRows,
-    bendingSequence: (m.bendingSequence || []).slice(),
+    bendingSequence: Array.isArray(m.bendingSequence) ? m.bendingSequence.slice() : [],
     bendingRows: bendingRows,
     assemblyTimeTarget: m.assemblyTimeTarget,
     fittingTimeTarget: m.fittingTimeTarget
