@@ -8,13 +8,21 @@ function computeSpeedPoints(targetMinutes, actualMinutes) {
   return Math.max(0, Math.min(200, Math.round(ratio * 100)));
 }
 
-function canonicalSheetCode(model, sheetSequencePos, fallback) {
-  if (!model) {
-    return fallback;
-  }
-  var sequence = parseJsonSafe(model.SheetSequence, []);
+function canonicalSheetCode(order, model, sheetSequencePos, fallback) {
   var index = Number(sheetSequencePos) - 1;
-  return sequence[index] !== undefined ? sequence[index] : fallback;
+  if (order) {
+    var resolved = parseJsonSafe(order.ResolvedSheetSequence, []);
+    if (resolved.length > 0 && resolved[index] !== undefined) {
+      return resolved[index];
+    }
+  }
+  if (model) {
+    var sequence = parseJsonSafe(model.SheetSequence, []);
+    if (sequence[index] !== undefined) {
+      return sequence[index];
+    }
+  }
+  return fallback;
 }
 
 function partsForSheet(partsPerSheet, sheetCode) {
@@ -65,6 +73,30 @@ function getOrdersById() {
     map[o.OrderID] = o;
   });
   return map;
+}
+
+function sortCuttingRows(rows) {
+  rows.sort(function (a, b) {
+    if (Number(a.SheetSequencePos) !== Number(b.SheetSequencePos)) {
+      return Number(a.SheetSequencePos) - Number(b.SheetSequencePos);
+    }
+    return Number(a.UnitIndex) - Number(b.UnitIndex);
+  });
+  return rows;
+}
+
+function cuttingProgressForRow(logId, orderId) {
+  var allOrderRows = sortCuttingRows(getAllRows('CuttingLog').filter(function (r) {
+    return r.OrderID === orderId;
+  }));
+  var position = 0;
+  for (var i = 0; i < allOrderRows.length; i++) {
+    if (allOrderRows[i].LogID === logId) {
+      position = i + 1;
+      break;
+    }
+  }
+  return { sheetPosition: position, totalSheetsInOrder: allOrderRows.length };
 }
 
 function bendingSequenceIndex(model, partName) {
@@ -130,10 +162,10 @@ function getCuttingQueue(userId) {
 
   var model = findRowById('ModelSettings', 'ModelNoName', next.ModelNoName);
   var order = orders[next.OrderID];
-  var orderQty = order ? Number(order.Qty) || 0 : 0;
-  var sheetCode = canonicalSheetCode(model, next.SheetSequencePos, next.SheetCode);
+  var sheetCode = canonicalSheetCode(order, model, next.SheetSequencePos, next.SheetCode);
   var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
   var partsMap = partsForSheet(partsPerSheet, sheetCode);
+  var progress = cuttingProgressForRow(next.LogID, next.OrderID);
 
   return {
     logId: next.LogID,
@@ -141,8 +173,8 @@ function getCuttingQueue(userId) {
     modelNoName: next.ModelNoName,
     sheetCode: sheetCode,
     sheetSequencePos: next.SheetSequencePos,
-    unitIndex: next.UnitIndex,
-    totalUnits: orderQty,
+    sheetPosition: progress.sheetPosition,
+    totalSheetsInOrder: progress.totalSheetsInOrder,
     status: next.Status,
     startedAt: next.StartedAt,
     customerName: order ? order.CustomerName : '',
@@ -183,7 +215,8 @@ function completeCuttingSheet(payload) {
   }
 
   var model = findRowById('ModelSettings', 'ModelNoName', row.ModelNoName);
-  var sheetCode = canonicalSheetCode(model, row.SheetSequencePos, row.SheetCode);
+  var order = findRowById('Orders', 'OrderID', row.OrderID);
+  var sheetCode = canonicalSheetCode(order, model, row.SheetSequencePos, row.SheetCode);
   var startedAt = new Date(row.StartedAt).getTime();
   var completedAt = new Date();
   var actualMinutes = (completedAt.getTime() - startedAt) / 60000;
@@ -203,7 +236,6 @@ function completeCuttingSheet(payload) {
     logId: payload.logId,
     orderId: row.OrderID,
     sheetCode: sheetCode,
-    unitIndex: row.UnitIndex,
     points: points,
     actualMinutes: Math.round(actualMinutes * 10) / 10,
     parts: Object.keys(partsMap).map(function (name) {
@@ -221,7 +253,8 @@ function submitCuttingQC(payload) {
   }
 
   var model = findRowById('ModelSettings', 'ModelNoName', row.ModelNoName);
-  var sheetCode = canonicalSheetCode(model, row.SheetSequencePos, row.SheetCode);
+  var order = findRowById('Orders', 'OrderID', row.OrderID);
+  var sheetCode = canonicalSheetCode(order, model, row.SheetSequencePos, row.SheetCode);
 
   var result = payload.result === 'pass' ? 'pass' : 'fail';
   var failAction = result === 'fail' ? payload.failAction : '';
@@ -256,7 +289,6 @@ function submitCuttingQC(payload) {
   if (shouldPushToBending) {
     var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
     var partsMap = partsForSheet(partsPerSheet, sheetCode);
-    var order = findRowById('Orders', 'OrderID', row.OrderID);
     var orderCreatedMs = order ? new Date(order.CreatedAt).getTime() : Date.now();
 
     Object.keys(partsMap).forEach(function (partName) {

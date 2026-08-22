@@ -61,7 +61,7 @@ function renderCuttingQueueContent(sheet) {
   card.innerHTML =
     '<div class="list-row-title">Sheet ' + sheet.sheetCode + ' — ' + sheet.modelNoName + '</div>' +
     '<div class="muted">Order ' + sheet.orderId + (sheet.customerName ? ' · ' + sheet.customerName : '') + '</div>' +
-    '<div class="muted"><strong>Unit ' + sheet.unitIndex + ' of ' + sheet.totalUnits + '</strong></div>' +
+    '<div class="muted"><strong>Sheet ' + sheet.sheetPosition + ' of ' + sheet.totalSheetsInOrder + '</strong></div>' +
     '<div class="muted">Target: ' + sheet.cuttingTimeTarget + ' min' + (sheet.includesSetup ? ' (includes machine setup)' : '') + ' · This sheet yields: ' + sheet.parts.join(', ') + '</div>';
   root.appendChild(card);
 

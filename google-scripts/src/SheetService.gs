@@ -120,3 +120,15 @@ function updateRow(tabName, matchFn, updates) {
   writeRowUpdates(tabName, existing._rowIndex, updates);
   return findRow(tabName, matchFn);
 }
+
+function deleteRowsWhere(tabName, matchFn) {
+  var sheet = getSheet(tabName);
+  var rows = findRows(tabName, matchFn);
+  rows.sort(function (a, b) {
+    return b._rowIndex - a._rowIndex;
+  });
+  rows.forEach(function (r) {
+    sheet.deleteRow(r._rowIndex);
+  });
+  return rows.length;
+}

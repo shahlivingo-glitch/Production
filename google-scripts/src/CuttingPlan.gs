@@ -34,10 +34,47 @@ function confirmCuttingPlan(payload) {
   if (!order) {
     throw new Error('Order not found');
   }
+
   var sequence = payload.sequence || [];
+  if (sequence.length === 0) {
+    throw new Error('Cannot confirm an empty cutting plan');
+  }
+
+  var existingCutting = getAllRows('CuttingLog').filter(function (r) {
+    return r.OrderID === payload.orderId;
+  });
+  var hasStartedWork = existingCutting.some(function (r) {
+    return r.Status !== 'pending';
+  });
+  if (hasStartedWork) {
+    throw new Error('Cutting has already started on this order - the plan can no longer be changed');
+  }
+
   updateRowById('Orders', 'OrderID', payload.orderId, {
     ResolvedSheetSequence: JSON.stringify(sequence)
   });
+
+  deleteRowsWhere('CuttingLog', function (r) {
+    return r.OrderID === payload.orderId;
+  });
+
+  var newRows = sequence.map(function (sheetCode, index) {
+    return {
+      LogID: generateId('CUT'),
+      OrderID: payload.orderId,
+      ModelNoName: order.ModelNoName,
+      SheetCode: sheetCode,
+      SheetSequencePos: index + 1,
+      UnitIndex: 1,
+      Status: 'pending',
+      StartedAt: '',
+      CompletedAt: '',
+      OperatorID: '',
+      Points: ''
+    };
+  });
+  appendRows('CuttingLog', newRows);
+
   return { orderId: payload.orderId, sheetsPlanned: sequence.length };
 }
 
