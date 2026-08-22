@@ -61,7 +61,8 @@ function renderCuttingQueueContent(sheet) {
   card.innerHTML =
     '<div class="list-row-title">Sheet ' + sheet.sheetCode + ' — ' + sheet.modelNoName + '</div>' +
     '<div class="muted">Order ' + sheet.orderId + (sheet.customerName ? ' · ' + sheet.customerName : '') + '</div>' +
-    '<div class="muted">Target: ' + sheet.cuttingTimeTarget + ' min · Parts: ' + sheet.parts.join(', ') + '</div>';
+    '<div class="muted"><strong>Sheets to cut: ' + sheet.sheetsToCut + '</strong></div>' +
+    '<div class="muted">Target: ' + sheet.cuttingTimeTarget + ' min · Total parts: ' + sheet.parts.join(', ') + '</div>';
   root.appendChild(card);
 
   if (sheet.status === 'in-progress') {
