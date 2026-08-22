@@ -61,7 +61,8 @@ function renderFittingOrderList(orders) {
     card.className = 'card list-row';
     card.innerHTML =
       '<div class="list-row-title">' + o.orderId + ' — ' + o.modelNoName + '</div>' +
-      '<div class="muted">Qty ' + o.qty + (o.customerName ? ' · ' + o.customerName : '') + ' · Target: ' + o.fittingTimeTarget + ' min</div>';
+      '<div class="muted">' + o.unitsFitted + ' of ' + o.qty + ' fitted' + (o.customerName ? ' · ' + o.customerName : '') + '</div>' +
+      '<div class="muted">Target: ' + o.fittingTimeTarget + ' min per unit</div>';
     card.addEventListener('click', function () { renderFittingOrderDetail(o.orderId); });
     root.appendChild(card);
   });
@@ -85,12 +86,13 @@ function renderFittingDetailContent(detail) {
   card.className = 'card';
   card.innerHTML =
     '<div class="list-row-title">' + detail.orderId + ' — ' + detail.modelNoName + '</div>' +
-    '<div class="muted">Qty ' + detail.qty + (detail.customerName ? ' · ' + detail.customerName : '') + ' · Target: ' + detail.fittingTimeTarget + ' min</div>';
+    '<div class="muted">' + detail.unitsFitted + ' of ' + detail.qty + ' fitted' + (detail.customerName ? ' · ' + detail.customerName : '') + '</div>' +
+    '<div class="muted">Target: ' + detail.fittingTimeTarget + ' min per unit</div>';
   root.appendChild(card);
 
   var kitTitle = document.createElement('div');
   kitTitle.className = 'section-title';
-  kitTitle.textContent = 'Kit List';
+  kitTitle.textContent = 'Kit List (this unit)';
   root.appendChild(kitTitle);
 
   var kitCard = document.createElement('div');
@@ -120,7 +122,7 @@ function renderFittingInProgress(data) {
 
   var root = el('dashboard-root');
   root.innerHTML = '';
-  root.appendChild(buildViewHeader('Fitting ' + data.orderId));
+  root.appendChild(buildViewHeader('Fitting unit ' + data.unitNumber + ' of ' + data.totalUnits));
 
   var timerCard = document.createElement('div');
   timerCard.className = 'card center-col';

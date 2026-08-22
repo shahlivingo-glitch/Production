@@ -1,7 +1,7 @@
 var TAB_HEADERS = {
   Orders: ['OrderID', 'ModelNoName', 'Qty', 'DXFRefNo', 'ColourPlan', 'DeliveryDeadline', 'CustomerName', 'Status', 'CreatedAt', 'CreatedBy'],
-  ModelSettings: ['ModelNoName', 'SheetSequence', 'PartsPerSheet', 'BOM', 'CuttingTimeTarget', 'BendingTimeTarget', 'AssemblyTimeTarget', 'FittingTimeTarget', 'UpdatedAt', 'UpdatedBy'],
-  CuttingLog: ['LogID', 'OrderID', 'ModelNoName', 'SheetCode', 'SheetSequencePos', 'Status', 'StartedAt', 'CompletedAt', 'OperatorID', 'Points'],
+  ModelSettings: ['ModelNoName', 'SheetSequence', 'PartsPerSheet', 'BOM', 'CuttingTimeTargets', 'BendingTimeTargets', 'AssemblyTimeTarget', 'FittingTimeTarget', 'UpdatedAt', 'UpdatedBy'],
+  CuttingLog: ['LogID', 'OrderID', 'ModelNoName', 'SheetCode', 'SheetSequencePos', 'UnitIndex', 'Status', 'StartedAt', 'CompletedAt', 'OperatorID', 'Points'],
   CuttingQC: ['QCID', 'OrderID', 'SheetCode', 'CheckedQty', 'ExpectedQty', 'Result', 'FailAction', 'CheckerID', 'Timestamp'],
   BendingQueue: ['QueueID', 'OrderID', 'PartName', 'SheetCode', 'Qty', 'Status', 'Priority', 'StartedAt', 'CompletedAt', 'OperatorID', 'Points'],
   BendingQC: ['QCID', 'OrderID', 'PartName', 'SheetCode', 'CheckedQty', 'ExpectedQty', 'Result', 'FailAction', 'CheckerID', 'Timestamp'],
@@ -64,6 +64,21 @@ function appendRow(tabName, rowObj) {
   });
   sheet.appendRow(row);
   return rowObj;
+}
+
+function appendRows(tabName, rowObjects) {
+  if (rowObjects.length === 0) {
+    return;
+  }
+  var sheet = getSheet(tabName);
+  var headers = TAB_HEADERS[tabName];
+  var values = rowObjects.map(function (rowObj) {
+    return headers.map(function (h) {
+      return rowObj.hasOwnProperty(h) ? rowObj[h] : '';
+    });
+  });
+  var startRow = sheet.getLastRow() + 1;
+  sheet.getRange(startRow, 1, values.length, headers.length).setValues(values);
 }
 
 function writeRowUpdates(tabName, rowIndex, updates) {

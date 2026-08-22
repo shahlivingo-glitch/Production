@@ -10,48 +10,71 @@ function getAllRequiredParts(model) {
   return Object.keys(set);
 }
 
-function isPartReadyForAssembly(orderId, partName) {
-  var qcRows = getAllRows('BendingQC').filter(function (r) {
-    return r.OrderID === orderId && r.PartName === partName;
+function perUnitQtyForPart(model, partName) {
+  var partsPerSheet = parseJsonSafe(model.PartsPerSheet, {});
+  var total = 0;
+  Object.keys(partsPerSheet).forEach(function (sheetCode) {
+    var partsMap = partsForSheet(partsPerSheet, sheetCode);
+    if (partsMap[partName]) {
+      total += Number(partsMap[partName]) || 0;
+    }
   });
-  return qcRows.some(function (qc) {
-    return qc.Result === 'pass' || qc.FailAction === 'continue';
+  return total;
+}
+
+function completedAssemblyCount(orderId) {
+  return getAllRows('AssemblyLog').filter(function (r) {
+    return r.OrderID === orderId && r.CompletedAt;
+  }).length;
+}
+
+function unitsReadyForAssembly(order, model) {
+  var requiredParts = getAllRequiredParts(model);
+  if (requiredParts.length === 0) {
+    return 0;
+  }
+  var alreadyAssembled = completedAssemblyCount(order.OrderID);
+  var minUnits = null;
+  requiredParts.forEach(function (part) {
+    var perUnit = perUnitQtyForPart(model, part);
+    if (!perUnit) {
+      return;
+    }
+    var totalPassed = totalPassedBendingQtyForPart(order.OrderID, part);
+    var unitsFromThisPart = Math.floor(totalPassed / perUnit);
+    if (minUnits === null || unitsFromThisPart < minUnits) {
+      minUnits = unitsFromThisPart;
+    }
   });
+  if (minUnits === null) {
+    return 0;
+  }
+  return Math.max(0, minUnits - alreadyAssembled);
 }
 
 function listReadyAssemblyOrders(userId) {
   requirePermission(userId, 'assembly');
 
-  var completedOrderIds = {};
-  getAllRows('AssemblyLog').forEach(function (a) {
-    if (a.CompletedAt) {
-      completedOrderIds[a.OrderID] = true;
-    }
-  });
-
   var results = [];
   getAllRows('Orders').forEach(function (order) {
-    if (completedOrderIds[order.OrderID]) {
-      return;
-    }
     var model = findRowById('ModelSettings', 'ModelNoName', order.ModelNoName);
     if (!model) {
       return;
     }
-    var requiredParts = getAllRequiredParts(model);
-    if (requiredParts.length === 0) {
+    var alreadyAssembled = completedAssemblyCount(order.OrderID);
+    if (alreadyAssembled >= Number(order.Qty)) {
       return;
     }
-    var allReady = requiredParts.every(function (part) {
-      return isPartReadyForAssembly(order.OrderID, part);
-    });
-    if (!allReady) {
+    var ready = unitsReadyForAssembly(order, model);
+    if (ready <= 0) {
       return;
     }
     results.push({
       orderId: order.OrderID,
       modelNoName: order.ModelNoName,
       qty: order.Qty,
+      unitsReady: ready,
+      unitsAssembled: alreadyAssembled,
       customerName: order.CustomerName,
       assemblyTimeTarget: model.AssemblyTimeTarget
     });
@@ -76,7 +99,7 @@ function getAssemblyOrderDetail(userId, orderId) {
   var shortages = [];
 
   Object.keys(bom).forEach(function (item) {
-    var needed = (Number(bom[item]) || 0) * Number(order.Qty);
+    var needed = Number(bom[item]) || 0;
     plannedBOM[item] = needed;
     var invRow = findRowById('InventoryLive', 'SKU', item);
     var available = invRow ? Number(invRow.CurrentStock) || 0 : 0;
@@ -89,6 +112,8 @@ function getAssemblyOrderDetail(userId, orderId) {
     orderId: order.OrderID,
     modelNoName: order.ModelNoName,
     qty: order.Qty,
+    unitsAssembled: completedAssemblyCount(orderId),
+    unitsReady: unitsReadyForAssembly(order, model),
     customerName: order.CustomerName,
     assemblyTimeTarget: model.AssemblyTimeTarget,
     plannedBOM: plannedBOM,
@@ -100,13 +125,17 @@ function startAssembly(payload) {
   requirePermission(payload.userId, 'assembly');
   var detail = getAssemblyOrderDetail(payload.userId, payload.orderId);
 
+  if (detail.unitsReady <= 0) {
+    throw new Error('No units ready to assemble yet');
+  }
+
   var logId = generateId('ASM');
   var startedAt = nowIso();
   appendRow('AssemblyLog', {
     LogID: logId,
     OrderID: detail.orderId,
     ModelNoName: detail.modelNoName,
-    Qty: detail.qty,
+    Qty: 1,
     PlannedBOM: JSON.stringify(detail.plannedBOM),
     ActualBOM: '',
     InventoryShortageFlag: detail.shortages.length > 0,
@@ -118,6 +147,8 @@ function startAssembly(payload) {
   return {
     logId: logId,
     orderId: detail.orderId,
+    unitNumber: detail.unitsAssembled + 1,
+    totalUnits: Number(detail.qty),
     startedAt: startedAt,
     plannedBOM: detail.plannedBOM,
     shortages: detail.shortages,
@@ -159,25 +190,45 @@ function completeAssembly(payload) {
   });
 
   var order = findRowById('Orders', 'OrderID', row.OrderID);
-  var colourPlan = order ? parseJsonSafe(order.ColourPlan, {}) : {};
-  Object.keys(colourPlan).forEach(function (colour) {
-    appendRow('PowderQueue', {
-      QueueID: generateId('PQ'),
-      OrderID: row.OrderID,
-      ModelNoName: row.ModelNoName,
-      Colour: colour,
-      Qty: colourPlan[colour],
-      Status: 'pending',
-      PlannedPowderKg: '',
-      ActualPowderKg: '',
-      FromMainStockKg: '',
-      FromPersonalStockKg: '',
-      LeftoverKg: '',
-      OperatorID: '',
-      StartedAt: '',
-      CompletedAt: ''
-    });
-  });
+  var totalCompleted = completedAssemblyCount(row.OrderID);
+  var isLastUnit = !!(order && totalCompleted >= Number(order.Qty));
+  var powderQueued = 0;
 
-  return { logId: payload.logId, orderId: row.OrderID, shortages: shortages };
+  if (isLastUnit) {
+    var alreadyQueued = getAllRows('PowderQueue').some(function (r) {
+      return r.OrderID === row.OrderID;
+    });
+    if (!alreadyQueued) {
+      var colourPlan = parseJsonSafe(order.ColourPlan, {});
+      Object.keys(colourPlan).forEach(function (colour) {
+        appendRow('PowderQueue', {
+          QueueID: generateId('PQ'),
+          OrderID: row.OrderID,
+          ModelNoName: row.ModelNoName,
+          Colour: colour,
+          Qty: colourPlan[colour],
+          Status: 'pending',
+          PlannedPowderKg: '',
+          ActualPowderKg: '',
+          FromMainStockKg: '',
+          FromPersonalStockKg: '',
+          LeftoverKg: '',
+          OperatorID: '',
+          StartedAt: '',
+          CompletedAt: ''
+        });
+        powderQueued++;
+      });
+    }
+  }
+
+  return {
+    logId: payload.logId,
+    orderId: row.OrderID,
+    shortages: shortages,
+    unitsCompleted: totalCompleted,
+    totalUnits: order ? Number(order.Qty) : 0,
+    isLastUnit: isLastUnit,
+    powderQueued: powderQueued
+  };
 }

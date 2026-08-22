@@ -4,10 +4,9 @@ function emptyModelForm() {
   return {
     modelNoName: '',
     locked: false,
-    sheetRows: [{ code: '', parts: '' }],
+    sheetRows: [{ code: '', parts: '', minutes: '' }],
     bomRows: [{ item: '', qty: '' }],
-    cuttingTimeTarget: '',
-    bendingTimeTarget: '',
+    bendingRows: [{ partName: '', minutes: '' }],
     assemblyTimeTarget: '',
     fittingTimeTarget: ''
   };
@@ -26,23 +25,33 @@ function partsMapToDisplayText(rawParts) {
 }
 
 function modelToForm(m) {
+  var cuttingTargets = m.cuttingTimeTargets || {};
   var sheetRows = m.sheetSequence.map(function (code) {
-    return { code: code, parts: partsMapToDisplayText(m.partsPerSheet[code]) };
+    return {
+      code: code,
+      parts: partsMapToDisplayText(m.partsPerSheet[code]),
+      minutes: cuttingTargets[code] !== undefined ? cuttingTargets[code] : ''
+    };
   });
-  if (sheetRows.length === 0) sheetRows.push({ code: '', parts: '' });
+  if (sheetRows.length === 0) sheetRows.push({ code: '', parts: '', minutes: '' });
 
   var bomRows = Object.keys(m.bom).map(function (item) {
     return { item: item, qty: m.bom[item] };
   });
   if (bomRows.length === 0) bomRows.push({ item: '', qty: '' });
 
+  var bendingTargets = m.bendingTimeTargets || {};
+  var bendingRows = Object.keys(bendingTargets).map(function (partName) {
+    return { partName: partName, minutes: bendingTargets[partName] };
+  });
+  if (bendingRows.length === 0) bendingRows.push({ partName: '', minutes: '' });
+
   return {
     modelNoName: m.modelNoName,
     locked: true,
     sheetRows: sheetRows,
     bomRows: bomRows,
-    cuttingTimeTarget: m.cuttingTimeTarget,
-    bendingTimeTarget: m.bendingTimeTarget,
+    bendingRows: bendingRows,
     assemblyTimeTarget: m.assemblyTimeTarget,
     fittingTimeTarget: m.fittingTimeTarget
   };
@@ -91,7 +100,7 @@ function renderModelSettingsList(models) {
     card.className = 'card list-row';
     card.innerHTML =
       '<div class="list-row-title">' + m.modelNoName + '</div>' +
-      '<div class="muted">Cutting ' + m.cuttingTimeTarget + 'm · Bending ' + m.bendingTimeTarget + 'm · Assembly ' + m.assemblyTimeTarget + 'm · Fitting ' + m.fittingTimeTarget + 'm</div>';
+      '<div class="muted">Assembly ' + m.assemblyTimeTarget + 'm · Fitting ' + m.fittingTimeTarget + 'm — cutting/bending times set per sheet/part</div>';
     card.addEventListener('click', function () {
       modelForm = modelToForm(m);
       renderModelSettingsForm();
@@ -121,7 +130,7 @@ function renderModelSettingsForm() {
   var seqHint = document.createElement('div');
   seqHint.className = 'muted';
   seqHint.style.marginBottom = '10px';
-  seqHint.textContent = 'Order matters — this is the fixed cut order. List parts as Name:Qty (e.g. Side:2, Palla Support:3), comma-separated. No :Qty means 1.';
+  seqHint.textContent = 'Order matters — this is the fixed cut order. Parts as Name:Qty (e.g. Side:2, Palla Support:3), comma-separated, per unit. Minutes = time to cut ONE physical sheet of this pattern.';
   root.appendChild(seqHint);
 
   var seqWrap = document.createElement('div');
@@ -132,7 +141,7 @@ function renderModelSettingsForm() {
   addSheetBtn.className = 'btn btn-secondary add-row-btn';
   addSheetBtn.textContent = '+ Add Sheet';
   addSheetBtn.addEventListener('click', function () {
-    modelForm.sheetRows.push({ code: '', parts: '' });
+    modelForm.sheetRows.push({ code: '', parts: '', minutes: '' });
     renderSheetRows(seqWrap);
   });
   root.appendChild(addSheetBtn);
@@ -155,13 +164,35 @@ function renderModelSettingsForm() {
   });
   root.appendChild(addBomBtn);
 
+  var bendingTitle = document.createElement('div');
+  bendingTitle.className = 'section-title';
+  bendingTitle.textContent = 'Bending Time per Part';
+  root.appendChild(bendingTitle);
+
+  var bendingHint = document.createElement('div');
+  bendingHint.className = 'muted';
+  bendingHint.style.marginBottom = '10px';
+  bendingHint.textContent = 'Minutes to bend ONE piece of that part — must match the part names used above exactly.';
+  root.appendChild(bendingHint);
+
+  var bendingWrap = document.createElement('div');
+  root.appendChild(bendingWrap);
+  renderBendingRows(bendingWrap);
+
+  var addBendingBtn = document.createElement('button');
+  addBendingBtn.className = 'btn btn-secondary add-row-btn';
+  addBendingBtn.textContent = '+ Add Part Time';
+  addBendingBtn.addEventListener('click', function () {
+    modelForm.bendingRows.push({ partName: '', minutes: '' });
+    renderBendingRows(bendingWrap);
+  });
+  root.appendChild(addBendingBtn);
+
   var targetsTitle = document.createElement('div');
   targetsTitle.className = 'section-title';
-  targetsTitle.textContent = 'Time Targets (minutes)';
+  targetsTitle.textContent = 'Time Targets (minutes, per unit)';
   root.appendChild(targetsTitle);
 
-  root.appendChild(buildNumberField('Cutting', modelForm.cuttingTimeTarget, function (v) { modelForm.cuttingTimeTarget = v; }));
-  root.appendChild(buildNumberField('Bending', modelForm.bendingTimeTarget, function (v) { modelForm.bendingTimeTarget = v; }));
   root.appendChild(buildNumberField('Assembly', modelForm.assemblyTimeTarget, function (v) { modelForm.assemblyTimeTarget = v; }));
   root.appendChild(buildNumberField('Fitting', modelForm.fittingTimeTarget, function (v) { modelForm.fittingTimeTarget = v; }));
 
@@ -181,7 +212,7 @@ function renderSheetRows(wrap) {
     var codeInput = document.createElement('input');
     codeInput.placeholder = 'Sheet code (e.g. A)';
     codeInput.value = row.code;
-    codeInput.style.maxWidth = '110px';
+    codeInput.style.maxWidth = '90px';
     codeInput.addEventListener('input', function (e) { row.code = e.target.value; });
 
     var partsInput = document.createElement('input');
@@ -189,8 +220,16 @@ function renderSheetRows(wrap) {
     partsInput.value = row.parts;
     partsInput.addEventListener('input', function (e) { row.parts = e.target.value; });
 
+    var minutesInput = document.createElement('input');
+    minutesInput.type = 'number';
+    minutesInput.placeholder = 'Min/sheet';
+    minutesInput.value = row.minutes;
+    minutesInput.style.maxWidth = '90px';
+    minutesInput.addEventListener('input', function (e) { row.minutes = e.target.value; });
+
     line.appendChild(codeInput);
     line.appendChild(partsInput);
+    line.appendChild(minutesInput);
 
     if (modelForm.sheetRows.length > 1) {
       var removeBtn = document.createElement('button');
@@ -243,6 +282,42 @@ function renderBomRows(wrap) {
   });
 }
 
+function renderBendingRows(wrap) {
+  wrap.innerHTML = '';
+  modelForm.bendingRows.forEach(function (row, i) {
+    var line = document.createElement('div');
+    line.className = 'dynamic-row';
+
+    var nameInput = document.createElement('input');
+    nameInput.placeholder = 'Part name (e.g. Side)';
+    nameInput.value = row.partName;
+    nameInput.addEventListener('input', function (e) { row.partName = e.target.value; });
+
+    var minutesInput = document.createElement('input');
+    minutesInput.type = 'number';
+    minutesInput.placeholder = 'Min/piece';
+    minutesInput.value = row.minutes;
+    minutesInput.style.maxWidth = '110px';
+    minutesInput.addEventListener('input', function (e) { row.minutes = e.target.value; });
+
+    line.appendChild(nameInput);
+    line.appendChild(minutesInput);
+
+    if (modelForm.bendingRows.length > 1) {
+      var removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-row-btn';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', function () {
+        modelForm.bendingRows.splice(i, 1);
+        renderBendingRows(wrap);
+      });
+      line.appendChild(removeBtn);
+    }
+
+    wrap.appendChild(line);
+  });
+}
+
 function submitModelForm() {
   if (!modelForm.modelNoName || !modelForm.modelNoName.trim()) {
     alert('Model name is required.');
@@ -251,6 +326,7 @@ function submitModelForm() {
 
   var sheetSequence = [];
   var partsPerSheet = {};
+  var cuttingTimeTargets = {};
   modelForm.sheetRows.forEach(function (row) {
     var code = row.code.trim();
     if (!code) return;
@@ -264,6 +340,7 @@ function submitModelForm() {
       parts[name] = qty;
     });
     partsPerSheet[code] = parts;
+    cuttingTimeTargets[code] = Number(row.minutes) || 0;
   });
 
   var bom = {};
@@ -273,14 +350,21 @@ function submitModelForm() {
     bom[item] = Number(row.qty) || 0;
   });
 
+  var bendingTimeTargets = {};
+  modelForm.bendingRows.forEach(function (row) {
+    var partName = row.partName.trim();
+    if (!partName) return;
+    bendingTimeTargets[partName] = Number(row.minutes) || 0;
+  });
+
   apiPost('saveModel', {
     userId: currentSession.userId,
     modelNoName: modelForm.modelNoName.trim(),
     sheetSequence: sheetSequence,
     partsPerSheet: partsPerSheet,
     bom: bom,
-    cuttingTimeTarget: modelForm.cuttingTimeTarget,
-    bendingTimeTarget: modelForm.bendingTimeTarget,
+    cuttingTimeTargets: cuttingTimeTargets,
+    bendingTimeTargets: bendingTimeTargets,
     assemblyTimeTarget: modelForm.assemblyTimeTarget,
     fittingTimeTarget: modelForm.fittingTimeTarget
   }).then(function (result) {

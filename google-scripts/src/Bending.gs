@@ -1,3 +1,11 @@
+function bendingTargetForPart(model, partName) {
+  if (!model) {
+    return 0;
+  }
+  var targets = parseJsonSafe(model.BendingTimeTargets, {});
+  return Number(targets[String(partName)]) || 0;
+}
+
 function getBendingQueue(userId) {
   requirePermission(userId, 'bending');
 
@@ -30,7 +38,7 @@ function getBendingQueue(userId) {
     startedAt: next.StartedAt,
     customerName: order ? order.CustomerName : '',
     modelNoName: order ? order.ModelNoName : '',
-    bendingTimeTarget: model ? model.BendingTimeTarget : 0
+    bendingTimeTarget: bendingTargetForPart(model, next.PartName)
   };
 }
 
@@ -63,10 +71,12 @@ function completeBendingPart(payload) {
 
   var order = findRowById('Orders', 'OrderID', row.OrderID);
   var model = order ? findRowById('ModelSettings', 'ModelNoName', order.ModelNoName) : null;
+  var qty = Number(row.Qty) || 0;
+  var target = bendingTargetForPart(model, row.PartName) * qty;
   var startedAt = new Date(row.StartedAt).getTime();
   var completedAt = new Date();
   var actualMinutes = (completedAt.getTime() - startedAt) / 60000;
-  var points = computeSpeedPoints(model ? model.BendingTimeTarget : 0, actualMinutes);
+  var points = computeSpeedPoints(target, actualMinutes);
 
   updateRowById('BendingQueue', 'QueueID', payload.queueId, {
     Status: 'done',
@@ -113,7 +123,7 @@ function submitBendingQC(payload) {
     LogID: generateId('QCL'),
     OrderID: row.OrderID,
     Stage: 'bending',
-    ItemRef: row.PartName,
+    ItemRef: row.QueueID,
     Result: result,
     FailAction: failAction,
     CheckerID: payload.userId,
@@ -167,4 +177,19 @@ function reorderBendingQueue(payload) {
     updateRowById('BendingQueue', 'QueueID', queueId, { Priority: (index + 1) * 1000 });
   });
   return { reordered: orderedIds.length };
+}
+
+function totalPassedBendingQtyForPart(orderId, partName) {
+  var passedQueueIds = {};
+  getAllRows('QCLog').filter(function (r) {
+    return r.Stage === 'bending' && (r.Result === 'pass' || r.FailAction === 'continue');
+  }).forEach(function (r) {
+    passedQueueIds[r.ItemRef] = true;
+  });
+
+  return getAllRows('BendingQueue').filter(function (r) {
+    return r.OrderID === orderId && r.PartName === partName && r.Status === 'done' && passedQueueIds[r.QueueID];
+  }).reduce(function (sum, r) {
+    return sum + (Number(r.Qty) || 0);
+  }, 0);
 }

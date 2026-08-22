@@ -38,12 +38,44 @@ function totalPartsQty(partsMap) {
   }, 0);
 }
 
+function cuttingTargetForSheet(model, sheetCode) {
+  if (!model) {
+    return 0;
+  }
+  var targets = parseJsonSafe(model.CuttingTimeTargets, {});
+  return Number(targets[String(sheetCode)]) || 0;
+}
+
 function getOrdersById() {
   var map = {};
   getAllRows('Orders').forEach(function (o) {
     map[o.OrderID] = o;
   });
   return map;
+}
+
+function addToBendingQueue(orderId, partName, sheetCode, addQty) {
+  var matchFn = function (r) {
+    return r.OrderID === orderId && r.PartName === partName && r.Status === 'unlocked';
+  };
+  var existing = findRow('BendingQueue', matchFn);
+  if (existing) {
+    updateRow('BendingQueue', matchFn, { Qty: (Number(existing.Qty) || 0) + addQty });
+  } else {
+    appendRow('BendingQueue', {
+      QueueID: generateId('BQ'),
+      OrderID: orderId,
+      PartName: partName,
+      SheetCode: sheetCode,
+      Qty: addQty,
+      Status: 'unlocked',
+      Priority: new Date().getTime(),
+      StartedAt: '',
+      CompletedAt: '',
+      OperatorID: '',
+      Points: ''
+    });
+  }
 }
 
 function getCuttingQueue(userId) {
@@ -60,7 +92,10 @@ function getCuttingQueue(userId) {
     if (aCreated !== bCreated) {
       return aCreated < bCreated ? -1 : 1;
     }
-    return Number(a.SheetSequencePos) - Number(b.SheetSequencePos);
+    if (Number(a.SheetSequencePos) !== Number(b.SheetSequencePos)) {
+      return Number(a.SheetSequencePos) - Number(b.SheetSequencePos);
+    }
+    return Number(a.UnitIndex) - Number(b.UnitIndex);
   });
 
   var mine = rows.filter(function (r) {
@@ -84,15 +119,16 @@ function getCuttingQueue(userId) {
     modelNoName: next.ModelNoName,
     sheetCode: sheetCode,
     sheetSequencePos: next.SheetSequencePos,
+    unitIndex: next.UnitIndex,
+    totalUnits: orderQty,
     status: next.Status,
     startedAt: next.StartedAt,
     customerName: order ? order.CustomerName : '',
-    cuttingTimeTarget: model ? model.CuttingTimeTarget : 0,
-    sheetsToCut: orderQty,
+    cuttingTimeTarget: cuttingTargetForSheet(model, sheetCode),
     parts: Object.keys(partsMap).map(function (name) {
-      return name + ' x' + ((Number(partsMap[name]) || 0) * orderQty);
+      return name + ' x' + (Number(partsMap[name]) || 0);
     }),
-    expectedQty: totalPartsQty(partsMap) * orderQty
+    expectedQty: totalPartsQty(partsMap)
   };
 }
 
@@ -124,12 +160,11 @@ function completeCuttingSheet(payload) {
   }
 
   var model = findRowById('ModelSettings', 'ModelNoName', row.ModelNoName);
-  var order = findRowById('Orders', 'OrderID', row.OrderID);
-  var orderQty = order ? Number(order.Qty) || 0 : 0;
+  var sheetCode = canonicalSheetCode(model, row.SheetSequencePos, row.SheetCode);
   var startedAt = new Date(row.StartedAt).getTime();
   var completedAt = new Date();
   var actualMinutes = (completedAt.getTime() - startedAt) / 60000;
-  var points = computeSpeedPoints(model ? model.CuttingTimeTarget : 0, actualMinutes);
+  var points = computeSpeedPoints(cuttingTargetForSheet(model, sheetCode), actualMinutes);
 
   updateRowById('CuttingLog', 'LogID', payload.logId, {
     Status: 'done',
@@ -137,7 +172,6 @@ function completeCuttingSheet(payload) {
     Points: points
   });
 
-  var sheetCode = canonicalSheetCode(model, row.SheetSequencePos, row.SheetCode);
   var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
   var partsMap = partsForSheet(partsPerSheet, sheetCode);
 
@@ -145,13 +179,13 @@ function completeCuttingSheet(payload) {
     logId: payload.logId,
     orderId: row.OrderID,
     sheetCode: sheetCode,
+    unitIndex: row.UnitIndex,
     points: points,
     actualMinutes: Math.round(actualMinutes * 10) / 10,
-    sheetsToCut: orderQty,
     parts: Object.keys(partsMap).map(function (name) {
-      return name + ' x' + ((Number(partsMap[name]) || 0) * orderQty);
+      return name + ' x' + (Number(partsMap[name]) || 0);
     }),
-    expectedQty: totalPartsQty(partsMap) * orderQty
+    expectedQty: totalPartsQty(partsMap)
   };
 }
 
@@ -184,7 +218,7 @@ function submitCuttingQC(payload) {
     LogID: generateId('QCL'),
     OrderID: row.OrderID,
     Stage: 'cutting',
-    ItemRef: sheetCode,
+    ItemRef: row.LogID,
     Result: result,
     FailAction: failAction,
     CheckerID: payload.userId,
@@ -196,27 +230,13 @@ function submitCuttingQC(payload) {
   var shouldPushToBending = result === 'pass' || failAction === 'continue';
 
   if (shouldPushToBending) {
-    var order = findRowById('Orders', 'OrderID', row.OrderID);
-    var orderQty = order ? Number(order.Qty) || 0 : 0;
     var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
     var partsMap = partsForSheet(partsPerSheet, sheetCode);
 
     Object.keys(partsMap).forEach(function (partName) {
-      var totalQty = (Number(partsMap[partName]) || 0) * orderQty;
-      appendRow('BendingQueue', {
-        QueueID: generateId('BQ'),
-        OrderID: row.OrderID,
-        PartName: partName,
-        SheetCode: sheetCode,
-        Qty: totalQty,
-        Status: 'unlocked',
-        Priority: new Date().getTime(),
-        StartedAt: '',
-        CompletedAt: '',
-        OperatorID: '',
-        Points: ''
-      });
-      pushedParts.push(partName + ' x' + totalQty);
+      var addQty = Number(partsMap[partName]) || 0;
+      addToBendingQueue(row.OrderID, partName, sheetCode, addQty);
+      pushedParts.push(partName + ' x' + addQty);
     });
   } else if (failAction === 'recut') {
     appendRow('CuttingLog', {
@@ -225,6 +245,7 @@ function submitCuttingQC(payload) {
       ModelNoName: row.ModelNoName,
       SheetCode: sheetCode,
       SheetSequencePos: row.SheetSequencePos,
+      UnitIndex: row.UnitIndex,
       Status: 'pending',
       StartedAt: '',
       CompletedAt: '',

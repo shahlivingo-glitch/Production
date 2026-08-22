@@ -45,20 +45,25 @@ function createOrder(payload) {
   });
 
   var sheetSequence = parseJsonSafe(model.SheetSequence, []);
+  var cuttingRows = [];
   sheetSequence.forEach(function (sheetCode, index) {
-    appendRow('CuttingLog', {
-      LogID: generateId('CUT'),
-      OrderID: orderId,
-      ModelNoName: payload.modelNoName,
-      SheetCode: sheetCode,
-      SheetSequencePos: index + 1,
-      Status: 'pending',
-      StartedAt: '',
-      CompletedAt: '',
-      OperatorID: '',
-      Points: ''
-    });
+    for (var unit = 1; unit <= qty; unit++) {
+      cuttingRows.push({
+        LogID: generateId('CUT'),
+        OrderID: orderId,
+        ModelNoName: payload.modelNoName,
+        SheetCode: sheetCode,
+        SheetSequencePos: index + 1,
+        UnitIndex: unit,
+        Status: 'pending',
+        StartedAt: '',
+        CompletedAt: '',
+        OperatorID: '',
+        Points: ''
+      });
+    }
   });
+  appendRows('CuttingLog', cuttingRows);
 
-  return { orderId: orderId, sheetsQueued: sheetSequence.length };
+  return { orderId: orderId, sheetsQueued: cuttingRows.length };
 }

@@ -7,15 +7,14 @@ function isPowderColourReadyForFitting(orderId, colour, passedQueueIds) {
   });
 }
 
+function completedFittingCount(orderId) {
+  return getAllRows('FittingLog').filter(function (r) {
+    return r.OrderID === orderId && r.CompletedAt;
+  }).length;
+}
+
 function listReadyFittingOrders(userId) {
   requirePermission(userId, 'fitting');
-
-  var completedOrderIds = {};
-  getAllRows('FittingLog').forEach(function (f) {
-    if (f.CompletedAt) {
-      completedOrderIds[f.OrderID] = true;
-    }
-  });
 
   var passedQueueIds = {};
   getAllRows('QCLog').filter(function (r) {
@@ -26,7 +25,8 @@ function listReadyFittingOrders(userId) {
 
   var results = [];
   getAllRows('Orders').forEach(function (order) {
-    if (completedOrderIds[order.OrderID]) {
+    var alreadyFitted = completedFittingCount(order.OrderID);
+    if (alreadyFitted >= Number(order.Qty)) {
       return;
     }
     var colours = Object.keys(parseJsonSafe(order.ColourPlan, {}));
@@ -45,6 +45,7 @@ function listReadyFittingOrders(userId) {
       orderId: order.OrderID,
       modelNoName: order.ModelNoName,
       qty: order.Qty,
+      unitsFitted: alreadyFitted,
       customerName: order.CustomerName,
       fittingTimeTarget: model ? model.FittingTimeTarget : 0
     });
@@ -67,13 +68,14 @@ function getFittingOrderDetail(userId, orderId) {
   var bom = parseJsonSafe(model.BOM, {});
   var kitList = {};
   Object.keys(bom).forEach(function (item) {
-    kitList[item] = (Number(bom[item]) || 0) * Number(order.Qty);
+    kitList[item] = Number(bom[item]) || 0;
   });
 
   return {
     orderId: order.OrderID,
     modelNoName: order.ModelNoName,
     qty: order.Qty,
+    unitsFitted: completedFittingCount(orderId),
     customerName: order.CustomerName,
     fittingTimeTarget: model.FittingTimeTarget,
     kitList: kitList
@@ -83,6 +85,10 @@ function getFittingOrderDetail(userId, orderId) {
 function startFitting(payload) {
   requirePermission(payload.userId, 'fitting');
   var detail = getFittingOrderDetail(payload.userId, payload.orderId);
+
+  if (detail.unitsFitted >= Number(detail.qty)) {
+    throw new Error('All units for this order are already fitted');
+  }
 
   Object.keys(detail.kitList).forEach(function (item) {
     var qty = detail.kitList[item];
@@ -101,7 +107,7 @@ function startFitting(payload) {
     LogID: logId,
     OrderID: detail.orderId,
     ModelNoName: detail.modelNoName,
-    Qty: detail.qty,
+    Qty: 1,
     KitList: JSON.stringify(detail.kitList),
     ReturnedQty: '',
     ReturnedConfirmedByFitter: false,
@@ -114,6 +120,8 @@ function startFitting(payload) {
   return {
     logId: logId,
     orderId: detail.orderId,
+    unitNumber: detail.unitsFitted + 1,
+    totalUnits: Number(detail.qty),
     startedAt: startedAt,
     kitList: detail.kitList,
     fittingTimeTarget: detail.fittingTimeTarget

@@ -61,7 +61,8 @@ function renderAssemblyOrderList(orders) {
     card.className = 'card list-row';
     card.innerHTML =
       '<div class="list-row-title">' + o.orderId + ' — ' + o.modelNoName + '</div>' +
-      '<div class="muted">Qty ' + o.qty + (o.customerName ? ' · ' + o.customerName : '') + ' · Target: ' + o.assemblyTimeTarget + ' min</div>';
+      '<div class="muted">' + o.unitsAssembled + ' of ' + o.qty + ' assembled · ' + o.unitsReady + ' ready now' + (o.customerName ? ' · ' + o.customerName : '') + '</div>' +
+      '<div class="muted">Target: ' + o.assemblyTimeTarget + ' min per unit</div>';
     card.addEventListener('click', function () { renderAssemblyOrderDetail(o.orderId); });
     root.appendChild(card);
   });
@@ -85,7 +86,8 @@ function renderAssemblyDetailContent(detail) {
   card.className = 'card';
   card.innerHTML =
     '<div class="list-row-title">' + detail.orderId + ' — ' + detail.modelNoName + '</div>' +
-    '<div class="muted">Qty ' + detail.qty + (detail.customerName ? ' · ' + detail.customerName : '') + ' · Target: ' + detail.assemblyTimeTarget + ' min</div>';
+    '<div class="muted">' + detail.unitsAssembled + ' of ' + detail.qty + ' assembled · ' + detail.unitsReady + ' ready now' + (detail.customerName ? ' · ' + detail.customerName : '') + '</div>' +
+    '<div class="muted">Target: ' + detail.assemblyTimeTarget + ' min per unit</div>';
   root.appendChild(card);
 
   if (detail.shortages.length > 0) {
@@ -128,7 +130,7 @@ function renderAssemblyInProgress(data) {
 
   var root = el('dashboard-root');
   root.innerHTML = '';
-  root.appendChild(buildViewHeader('Assembling ' + data.orderId));
+  root.appendChild(buildViewHeader('Assembling unit ' + data.unitNumber + ' of ' + data.totalUnits));
 
   var timerCard = document.createElement('div');
   timerCard.className = 'card center-col';
@@ -178,9 +180,14 @@ function renderAssemblyBOMConfirm() {
       actualBOM: actualBOM
     }).then(function (result) {
       if (!result.ok) return showFatalError(result.error);
-      var msg = result.data.shortages.length
-        ? 'Assembly complete. Now short on: ' + result.data.shortages.join(', ')
-        : 'Assembly complete.';
+      var data = result.data;
+      var msg = 'Unit ' + data.unitsCompleted + ' of ' + data.totalUnits + ' assembled.';
+      if (data.isLastUnit) {
+        msg += ' Order fully assembled — sent to Powder Coating.';
+      }
+      if (data.shortages.length) {
+        msg += ' Now short on: ' + data.shortages.join(', ');
+      }
       alert(msg);
       renderAssemblyView();
     }).catch(showFatalError);
