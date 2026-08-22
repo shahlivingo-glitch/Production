@@ -54,7 +54,16 @@ function getOrdersById() {
   return map;
 }
 
-function addToBendingQueue(orderId, partName, sheetCode, addQty) {
+function bendingSequenceIndex(model, partName) {
+  if (!model) {
+    return 999;
+  }
+  var sequence = parseJsonSafe(model.BendingSequence, []);
+  var index = sequence.indexOf(partName);
+  return index === -1 ? 999 : index;
+}
+
+function addToBendingQueue(orderId, partName, sheetCode, addQty, priority) {
   var matchFn = function (r) {
     return r.OrderID === orderId && r.PartName === partName && r.Status === 'unlocked';
   };
@@ -69,7 +78,7 @@ function addToBendingQueue(orderId, partName, sheetCode, addQty) {
       SheetCode: sheetCode,
       Qty: addQty,
       Status: 'unlocked',
-      Priority: new Date().getTime(),
+      Priority: priority,
       StartedAt: '',
       CompletedAt: '',
       OperatorID: '',
@@ -232,10 +241,13 @@ function submitCuttingQC(payload) {
   if (shouldPushToBending) {
     var partsPerSheet = model ? parseJsonSafe(model.PartsPerSheet, {}) : {};
     var partsMap = partsForSheet(partsPerSheet, sheetCode);
+    var order = findRowById('Orders', 'OrderID', row.OrderID);
+    var orderCreatedMs = order ? new Date(order.CreatedAt).getTime() : Date.now();
 
     Object.keys(partsMap).forEach(function (partName) {
       var addQty = Number(partsMap[partName]) || 0;
-      addToBendingQueue(row.OrderID, partName, sheetCode, addQty);
+      var priority = orderCreatedMs + bendingSequenceIndex(model, partName) * 0.001;
+      addToBendingQueue(row.OrderID, partName, sheetCode, addQty, priority);
       pushedParts.push(partName + ' x' + addQty);
     });
   } else if (failAction === 'recut') {

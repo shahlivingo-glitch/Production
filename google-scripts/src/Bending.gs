@@ -132,6 +132,11 @@ function submitBendingQC(payload) {
   });
 
   if (failAction === 'recut') {
+    var order = findRowById('Orders', 'OrderID', row.OrderID);
+    var model = order ? findRowById('ModelSettings', 'ModelNoName', order.ModelNoName) : null;
+    var orderCreatedMs = order ? new Date(order.CreatedAt).getTime() : Date.now();
+    var priority = orderCreatedMs + bendingSequenceIndex(model, row.PartName) * 0.001;
+
     appendRow('BendingQueue', {
       QueueID: generateId('BQ'),
       OrderID: row.OrderID,
@@ -139,7 +144,7 @@ function submitBendingQC(payload) {
       SheetCode: row.SheetCode,
       Qty: row.Qty,
       Status: 'unlocked',
-      Priority: new Date().getTime(),
+      Priority: priority,
       StartedAt: '',
       CompletedAt: '',
       OperatorID: '',

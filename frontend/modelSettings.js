@@ -1,5 +1,6 @@
 var modelForm = null;
 var bendingWrapEl = null;
+var bendingSequenceWrapEl = null;
 
 function getAllPartNamesFromSheets() {
   var names = {};
@@ -12,9 +13,12 @@ function getAllPartNamesFromSheets() {
   return Object.keys(names).sort();
 }
 
-function refreshBendingDropdowns() {
+function refreshPartDependentSections() {
   if (bendingWrapEl) {
     renderBendingRows(bendingWrapEl);
+  }
+  if (bendingSequenceWrapEl) {
+    renderBendingSequenceRows(bendingSequenceWrapEl);
   }
 }
 
@@ -24,6 +28,7 @@ function emptyModelForm() {
     locked: false,
     sheetRows: [{ code: '', parts: '', minutes: '' }],
     bomRows: [{ item: '', qty: '' }],
+    bendingSequence: [],
     bendingRows: [{ partName: '', minutes: '' }],
     assemblyTimeTarget: '',
     fittingTimeTarget: ''
@@ -69,6 +74,7 @@ function modelToForm(m) {
     locked: true,
     sheetRows: sheetRows,
     bomRows: bomRows,
+    bendingSequence: (m.bendingSequence || []).slice(),
     bendingRows: bendingRows,
     assemblyTimeTarget: m.assemblyTimeTarget,
     fittingTimeTarget: m.fittingTimeTarget
@@ -182,6 +188,21 @@ function renderModelSettingsForm() {
   });
   root.appendChild(addBomBtn);
 
+  var bendingSeqTitle = document.createElement('div');
+  bendingSeqTitle.className = 'section-title';
+  bendingSeqTitle.textContent = 'Bending Sequence';
+  root.appendChild(bendingSeqTitle);
+
+  var bendingSeqHint = document.createElement('div');
+  bendingSeqHint.className = 'muted';
+  bendingSeqHint.style.marginBottom = '10px';
+  bendingSeqHint.textContent = 'Order matters — sets the default order parts are queued for bending, per unit. The checker can still reorder the live queue manually.';
+  root.appendChild(bendingSeqHint);
+
+  bendingSequenceWrapEl = document.createElement('div');
+  root.appendChild(bendingSequenceWrapEl);
+  renderBendingSequenceRows(bendingSequenceWrapEl);
+
   var bendingTitle = document.createElement('div');
   bendingTitle.className = 'section-title';
   bendingTitle.textContent = 'Bending Time per Part';
@@ -238,7 +259,7 @@ function renderSheetRows(wrap) {
     partsInput.value = row.parts;
     partsInput.addEventListener('input', function (e) {
       row.parts = e.target.value;
-      refreshBendingDropdowns();
+      refreshPartDependentSections();
     });
 
     var minutesInput = document.createElement('input');
@@ -300,6 +321,60 @@ function renderBomRows(wrap) {
     }
 
     wrap.appendChild(line);
+  });
+}
+
+function renderBendingSequenceRows(wrap) {
+  wrap.innerHTML = '';
+
+  var allParts = getAllPartNamesFromSheets();
+  var ordered = modelForm.bendingSequence.filter(function (p) { return allParts.indexOf(p) !== -1; });
+  allParts.forEach(function (p) { if (ordered.indexOf(p) === -1) ordered.push(p); });
+  modelForm.bendingSequence = ordered;
+
+  if (ordered.length === 0) {
+    var empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.textContent = 'Add parts to a sheet above first.';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  ordered.forEach(function (partName, i) {
+    var row = document.createElement('div');
+    row.className = 'dynamic-row';
+
+    var label = document.createElement('div');
+    label.style.flex = '1';
+    label.style.fontWeight = '600';
+    label.textContent = (i + 1) + '. ' + partName;
+
+    var upBtn = document.createElement('button');
+    upBtn.className = 'btn btn-secondary';
+    upBtn.style.minHeight = '40px';
+    upBtn.style.padding = '6px 12px';
+    upBtn.textContent = '↑';
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener('click', function () {
+      modelForm.bendingSequence.splice(i - 1, 0, modelForm.bendingSequence.splice(i, 1)[0]);
+      renderBendingSequenceRows(wrap);
+    });
+
+    var downBtn = document.createElement('button');
+    downBtn.className = 'btn btn-secondary';
+    downBtn.style.minHeight = '40px';
+    downBtn.style.padding = '6px 12px';
+    downBtn.textContent = '↓';
+    downBtn.disabled = i === ordered.length - 1;
+    downBtn.addEventListener('click', function () {
+      modelForm.bendingSequence.splice(i + 1, 0, modelForm.bendingSequence.splice(i, 1)[0]);
+      renderBendingSequenceRows(wrap);
+    });
+
+    row.appendChild(label);
+    row.appendChild(upBtn);
+    row.appendChild(downBtn);
+    wrap.appendChild(row);
   });
 }
 
@@ -400,6 +475,7 @@ function submitModelForm() {
     partsPerSheet: partsPerSheet,
     bom: bom,
     cuttingTimeTargets: cuttingTimeTargets,
+    bendingSequence: modelForm.bendingSequence,
     bendingTimeTargets: bendingTimeTargets,
     assemblyTimeTarget: modelForm.assemblyTimeTarget,
     fittingTimeTarget: modelForm.fittingTimeTarget
