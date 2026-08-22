@@ -6,6 +6,21 @@ function bendingTargetForPart(model, partName) {
   return Number(targets[String(partName)]) || 0;
 }
 
+function isFirstBendingJobForPart(orderId, partName, excludeQueueId) {
+  return !getAllRows('BendingQueue').some(function (r) {
+    return r.OrderID === orderId && r.PartName === partName && r.Status === 'done' && r.QueueID !== excludeQueueId;
+  });
+}
+
+function effectiveBendingTarget(model, partName, qty, orderId, excludeQueueId) {
+  var base = bendingTargetForPart(model, partName) * (Number(qty) || 0);
+  if (!isFirstBendingJobForPart(orderId, partName, excludeQueueId)) {
+    return base;
+  }
+  var setup = model ? Number(model.BendingSetupTime) || 0 : 0;
+  return base + setup;
+}
+
 function getBendingQueue(userId) {
   requirePermission(userId, 'bending');
 
@@ -38,7 +53,8 @@ function getBendingQueue(userId) {
     startedAt: next.StartedAt,
     customerName: order ? order.CustomerName : '',
     modelNoName: order ? order.ModelNoName : '',
-    bendingTimeTarget: bendingTargetForPart(model, next.PartName)
+    bendingTimeTarget: effectiveBendingTarget(model, next.PartName, next.Qty, next.OrderID, next.QueueID),
+    includesSetup: isFirstBendingJobForPart(next.OrderID, next.PartName, next.QueueID)
   };
 }
 
@@ -71,8 +87,7 @@ function completeBendingPart(payload) {
 
   var order = findRowById('Orders', 'OrderID', row.OrderID);
   var model = order ? findRowById('ModelSettings', 'ModelNoName', order.ModelNoName) : null;
-  var qty = Number(row.Qty) || 0;
-  var target = bendingTargetForPart(model, row.PartName) * qty;
+  var target = effectiveBendingTarget(model, row.PartName, row.Qty, row.OrderID, row.QueueID);
   var startedAt = new Date(row.StartedAt).getTime();
   var completedAt = new Date();
   var actualMinutes = (completedAt.getTime() - startedAt) / 60000;

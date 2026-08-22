@@ -30,8 +30,12 @@ function emptyModelForm() {
     bomRows: [{ item: '', qty: '' }],
     bendingSequence: [],
     bendingRows: [{ partName: '', minutes: '' }],
+    cuttingSetupTime: '',
+    bendingSetupTime: '',
     assemblyTimeTarget: '',
-    fittingTimeTarget: ''
+    assemblySetupTime: '',
+    fittingTimeTarget: '',
+    fittingSetupTime: ''
   };
 }
 
@@ -76,8 +80,12 @@ function modelToForm(m) {
     bomRows: bomRows,
     bendingSequence: (m.bendingSequence || []).slice(),
     bendingRows: bendingRows,
+    cuttingSetupTime: m.cuttingSetupTime,
+    bendingSetupTime: m.bendingSetupTime,
     assemblyTimeTarget: m.assemblyTimeTarget,
-    fittingTimeTarget: m.fittingTimeTarget
+    assemblySetupTime: m.assemblySetupTime,
+    fittingTimeTarget: m.fittingTimeTarget,
+    fittingSetupTime: m.fittingSetupTime
   };
 }
 
@@ -234,6 +242,22 @@ function renderModelSettingsForm() {
 
   root.appendChild(buildNumberField('Assembly', modelForm.assemblyTimeTarget, function (v) { modelForm.assemblyTimeTarget = v; }));
   root.appendChild(buildNumberField('Fitting', modelForm.fittingTimeTarget, function (v) { modelForm.fittingTimeTarget = v; }));
+
+  var setupTitle = document.createElement('div');
+  setupTitle.className = 'section-title';
+  setupTitle.textContent = 'Setup Time (once per order, minutes)';
+  root.appendChild(setupTitle);
+
+  var setupHint = document.createElement('div');
+  setupHint.className = 'muted';
+  setupHint.style.marginBottom = '10px';
+  setupHint.textContent = 'Machine start-up, warm-up, maintenance checks — added once to the first job of each stage for an order, on top of the per-piece/per-unit targets above.';
+  root.appendChild(setupHint);
+
+  root.appendChild(buildNumberField('Cutting setup', modelForm.cuttingSetupTime, function (v) { modelForm.cuttingSetupTime = v; }));
+  root.appendChild(buildNumberField('Bending setup', modelForm.bendingSetupTime, function (v) { modelForm.bendingSetupTime = v; }));
+  root.appendChild(buildNumberField('Assembly setup', modelForm.assemblySetupTime, function (v) { modelForm.assemblySetupTime = v; }));
+  root.appendChild(buildNumberField('Fitting setup', modelForm.fittingSetupTime, function (v) { modelForm.fittingSetupTime = v; }));
 
   var saveBtn = document.createElement('button');
   saveBtn.className = 'btn btn-primary btn-block';
@@ -475,10 +499,14 @@ function submitModelForm() {
     partsPerSheet: partsPerSheet,
     bom: bom,
     cuttingTimeTargets: cuttingTimeTargets,
+    cuttingSetupTime: modelForm.cuttingSetupTime,
     bendingSequence: modelForm.bendingSequence,
     bendingTimeTargets: bendingTimeTargets,
+    bendingSetupTime: modelForm.bendingSetupTime,
     assemblyTimeTarget: modelForm.assemblyTimeTarget,
-    fittingTimeTarget: modelForm.fittingTimeTarget
+    assemblySetupTime: modelForm.assemblySetupTime,
+    fittingTimeTarget: modelForm.fittingTimeTarget,
+    fittingSetupTime: modelForm.fittingSetupTime
   }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     renderModelSettingsView();

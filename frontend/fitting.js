@@ -62,7 +62,7 @@ function renderFittingOrderList(orders) {
     card.innerHTML =
       '<div class="list-row-title">' + o.orderId + ' — ' + o.modelNoName + '</div>' +
       '<div class="muted">' + o.unitsFitted + ' of ' + o.qty + ' fitted' + (o.customerName ? ' · ' + o.customerName : '') + '</div>' +
-      '<div class="muted">Target: ' + o.fittingTimeTarget + ' min per unit</div>';
+      '<div class="muted">Target: ' + o.fittingTimeTarget + ' min' + (o.unitsFitted === 0 ? ' (first unit includes machine setup)' : ' per unit') + '</div>';
     card.addEventListener('click', function () { renderFittingOrderDetail(o.orderId); });
     root.appendChild(card);
   });
@@ -87,7 +87,7 @@ function renderFittingDetailContent(detail) {
   card.innerHTML =
     '<div class="list-row-title">' + detail.orderId + ' — ' + detail.modelNoName + '</div>' +
     '<div class="muted">' + detail.unitsFitted + ' of ' + detail.qty + ' fitted' + (detail.customerName ? ' · ' + detail.customerName : '') + '</div>' +
-    '<div class="muted">Target: ' + detail.fittingTimeTarget + ' min per unit</div>';
+    '<div class="muted">Target: ' + detail.fittingTimeTarget + ' min' + (detail.unitsFitted === 0 ? ' (first unit includes machine setup)' : ' per unit') + '</div>';
   root.appendChild(card);
 
   var kitTitle = document.createElement('div');

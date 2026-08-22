@@ -22,6 +22,14 @@ function perUnitQtyForPart(model, partName) {
   return total;
 }
 
+function effectiveAssemblyTarget(model, unitsAssembled) {
+  var base = Number(model.AssemblyTimeTarget) || 0;
+  if (unitsAssembled > 0) {
+    return base;
+  }
+  return base + (Number(model.AssemblySetupTime) || 0);
+}
+
 function completedAssemblyCount(orderId) {
   return getAllRows('AssemblyLog').filter(function (r) {
     return r.OrderID === orderId && r.CompletedAt;
@@ -76,7 +84,7 @@ function listReadyAssemblyOrders(userId) {
       unitsReady: ready,
       unitsAssembled: alreadyAssembled,
       customerName: order.CustomerName,
-      assemblyTimeTarget: model.AssemblyTimeTarget
+      assemblyTimeTarget: effectiveAssemblyTarget(model, alreadyAssembled)
     });
   });
 
@@ -115,7 +123,7 @@ function getAssemblyOrderDetail(userId, orderId) {
     unitsAssembled: completedAssemblyCount(orderId),
     unitsReady: unitsReadyForAssembly(order, model),
     customerName: order.CustomerName,
-    assemblyTimeTarget: model.AssemblyTimeTarget,
+    assemblyTimeTarget: effectiveAssemblyTarget(model, completedAssemblyCount(orderId)),
     plannedBOM: plannedBOM,
     shortages: shortages
   };

@@ -67,7 +67,7 @@ function renderBendingQueueContent(part) {
   card.innerHTML =
     '<div class="list-row-title">' + part.partName + ' — ' + part.modelNoName + '</div>' +
     '<div class="muted">Order ' + part.orderId + (part.customerName ? ' · ' + part.customerName : '') + '</div>' +
-    '<div class="muted">From sheet ' + part.sheetCode + ' · Qty ' + part.qty + ' · Target: ' + part.bendingTimeTarget + ' min</div>';
+    '<div class="muted">From sheet ' + part.sheetCode + ' · Qty ' + part.qty + ' · Target: ' + part.bendingTimeTarget + ' min' + (part.includesSetup ? ' (includes machine setup)' : '') + '</div>';
   root.appendChild(card);
 
   if (part.status === 'in-progress') {

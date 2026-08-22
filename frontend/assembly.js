@@ -62,7 +62,7 @@ function renderAssemblyOrderList(orders) {
     card.innerHTML =
       '<div class="list-row-title">' + o.orderId + ' — ' + o.modelNoName + '</div>' +
       '<div class="muted">' + o.unitsAssembled + ' of ' + o.qty + ' assembled · ' + o.unitsReady + ' ready now' + (o.customerName ? ' · ' + o.customerName : '') + '</div>' +
-      '<div class="muted">Target: ' + o.assemblyTimeTarget + ' min per unit</div>';
+      '<div class="muted">Target: ' + o.assemblyTimeTarget + ' min' + (o.unitsAssembled === 0 ? ' (first unit includes machine setup)' : ' per unit') + '</div>';
     card.addEventListener('click', function () { renderAssemblyOrderDetail(o.orderId); });
     root.appendChild(card);
   });
@@ -87,7 +87,7 @@ function renderAssemblyDetailContent(detail) {
   card.innerHTML =
     '<div class="list-row-title">' + detail.orderId + ' — ' + detail.modelNoName + '</div>' +
     '<div class="muted">' + detail.unitsAssembled + ' of ' + detail.qty + ' assembled · ' + detail.unitsReady + ' ready now' + (detail.customerName ? ' · ' + detail.customerName : '') + '</div>' +
-    '<div class="muted">Target: ' + detail.assemblyTimeTarget + ' min per unit</div>';
+    '<div class="muted">Target: ' + detail.assemblyTimeTarget + ' min' + (detail.unitsAssembled === 0 ? ' (first unit includes machine setup)' : ' per unit') + '</div>';
   root.appendChild(card);
 
   if (detail.shortages.length > 0) {

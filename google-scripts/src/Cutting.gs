@@ -46,6 +46,19 @@ function cuttingTargetForSheet(model, sheetCode) {
   return Number(targets[String(sheetCode)]) || 0;
 }
 
+function isFirstCuttingJobForOrder(sheetSequencePos, unitIndex) {
+  return Number(sheetSequencePos) === 1 && Number(unitIndex) === 1;
+}
+
+function effectiveCuttingTarget(model, sheetCode, sheetSequencePos, unitIndex) {
+  var base = cuttingTargetForSheet(model, sheetCode);
+  if (!isFirstCuttingJobForOrder(sheetSequencePos, unitIndex)) {
+    return base;
+  }
+  var setup = model ? Number(model.CuttingSetupTime) || 0 : 0;
+  return base + setup;
+}
+
 function getOrdersById() {
   var map = {};
   getAllRows('Orders').forEach(function (o) {
@@ -133,7 +146,8 @@ function getCuttingQueue(userId) {
     status: next.Status,
     startedAt: next.StartedAt,
     customerName: order ? order.CustomerName : '',
-    cuttingTimeTarget: cuttingTargetForSheet(model, sheetCode),
+    cuttingTimeTarget: effectiveCuttingTarget(model, sheetCode, next.SheetSequencePos, next.UnitIndex),
+    includesSetup: isFirstCuttingJobForOrder(next.SheetSequencePos, next.UnitIndex),
     parts: Object.keys(partsMap).map(function (name) {
       return name + ' x' + (Number(partsMap[name]) || 0);
     }),
@@ -173,7 +187,8 @@ function completeCuttingSheet(payload) {
   var startedAt = new Date(row.StartedAt).getTime();
   var completedAt = new Date();
   var actualMinutes = (completedAt.getTime() - startedAt) / 60000;
-  var points = computeSpeedPoints(cuttingTargetForSheet(model, sheetCode), actualMinutes);
+  var target = effectiveCuttingTarget(model, sheetCode, row.SheetSequencePos, row.UnitIndex);
+  var points = computeSpeedPoints(target, actualMinutes);
 
   updateRowById('CuttingLog', 'LogID', payload.logId, {
     Status: 'done',

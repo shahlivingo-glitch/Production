@@ -7,6 +7,14 @@ function isPowderColourReadyForFitting(orderId, colour, passedQueueIds) {
   });
 }
 
+function effectiveFittingTarget(model, unitsFitted) {
+  var base = Number(model.FittingTimeTarget) || 0;
+  if (unitsFitted > 0) {
+    return base;
+  }
+  return base + (Number(model.FittingSetupTime) || 0);
+}
+
 function completedFittingCount(orderId) {
   return getAllRows('FittingLog').filter(function (r) {
     return r.OrderID === orderId && r.CompletedAt;
@@ -47,7 +55,7 @@ function listReadyFittingOrders(userId) {
       qty: order.Qty,
       unitsFitted: alreadyFitted,
       customerName: order.CustomerName,
-      fittingTimeTarget: model ? model.FittingTimeTarget : 0
+      fittingTimeTarget: model ? effectiveFittingTarget(model, alreadyFitted) : 0
     });
   });
 
@@ -77,7 +85,7 @@ function getFittingOrderDetail(userId, orderId) {
     qty: order.Qty,
     unitsFitted: completedFittingCount(orderId),
     customerName: order.CustomerName,
-    fittingTimeTarget: model.FittingTimeTarget,
+    fittingTimeTarget: effectiveFittingTarget(model, completedFittingCount(orderId)),
     kitList: kitList
   };
 }
