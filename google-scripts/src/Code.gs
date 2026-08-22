@@ -18,7 +18,16 @@ var GET_ACTIONS = {
   readyFittingOrders: function (p) { return listReadyFittingOrders(p.userId); },
   fittingOrderDetail: function (p) { return getFittingOrderDetail(p.userId, p.orderId); },
   checkerQueue: function (p) { return getCheckerQueue(p.userId, p.stage); },
-  appSettings: function (p) { return getAppSettings(p.userId); }
+  appSettings: function (p) { return getAppSettings(p.userId); },
+  testCuttingPlan: function (p) {
+    requirePermission(p.userId, 'settings');
+    return computeCuttingPlan(p.modelNoName, Number(p.qty) || 0, parseJsonSafe(p.stock, {}));
+  },
+  runSetup: function (p) {
+    requirePermission(p.userId, 'settings');
+    setupSpreadsheet();
+    return { ran: true };
+  }
 };
 
 var POST_ACTIONS = {

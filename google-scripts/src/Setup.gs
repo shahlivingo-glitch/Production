@@ -22,5 +22,9 @@ function setupSpreadsheet() {
     ss.deleteSheet(defaultSheet);
   }
   SpreadsheetApp.flush();
-  SpreadsheetApp.getActiveSpreadsheet().toast('All tabs are set up.', 'Almirah Tracker', 5);
+  try {
+    SpreadsheetApp.getActiveSpreadsheet().toast('All tabs are set up.', 'Almirah Tracker', 5);
+  } catch (err) {
+    // no UI session open (e.g. triggered via the API) - setup itself already succeeded
+  }
 }
