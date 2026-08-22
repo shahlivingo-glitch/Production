@@ -53,6 +53,19 @@ function renderOrderList(orders) {
       '<div class="list-row-title">' + o.orderId + ' — ' + o.modelNoName + '</div>' +
       '<div class="muted">Qty ' + o.qty + ' · ' + (o.customerName || '—') + ' · Status: ' + o.status + '</div>' +
       '<div class="muted">Deadline: ' + (o.deliveryDeadline || '—') + '</div>';
+
+    var planBtn = document.createElement('button');
+    planBtn.className = 'btn btn-secondary';
+    planBtn.style.marginTop = '10px';
+    planBtn.style.minHeight = '40px';
+    planBtn.style.padding = '8px 14px';
+    planBtn.textContent = 'Plan Cutting';
+    planBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      renderPlanCuttingView(o.orderId);
+    });
+    card.appendChild(planBtn);
+
     root.appendChild(card);
   });
 }

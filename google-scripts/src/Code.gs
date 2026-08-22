@@ -27,7 +27,8 @@ var GET_ACTIONS = {
     requirePermission(p.userId, 'settings');
     setupSpreadsheet();
     return { ran: true };
-  }
+  },
+  orderPlanContext: function (p) { return getOrderPlanContext(p.userId, p.orderId); }
 };
 
 var POST_ACTIONS = {
@@ -51,7 +52,9 @@ var POST_ACTIONS = {
   confirmFittingReturnByChecker: function (b) { return confirmFittingReturnByChecker(b); },
   submitAssemblyQC: function (b) { return submitAssemblyQC(b); },
   submitPowderQC: function (b) { return submitPowderQC(b); },
-  saveAppSettings: function (b) { return saveAppSettings(b); }
+  saveAppSettings: function (b) { return saveAppSettings(b); },
+  previewCuttingPlan: function (b) { return previewCuttingPlan(b); },
+  confirmCuttingPlan: function (b) { return confirmCuttingPlan(b); }
 };
 
 function doGet(e) {

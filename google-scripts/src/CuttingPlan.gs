@@ -1,3 +1,46 @@
+function getOrderPlanContext(userId, orderId) {
+  requirePermission(userId, 'settings');
+  var order = findRowById('Orders', 'OrderID', orderId);
+  if (!order) {
+    throw new Error('Order not found');
+  }
+  var model = findRowById('ModelSettings', 'ModelNoName', order.ModelNoName);
+  if (!model) {
+    throw new Error('Model not configured');
+  }
+
+  return {
+    orderId: order.OrderID,
+    modelNoName: order.ModelNoName,
+    qty: order.Qty,
+    sheetSequence: parseJsonSafe(model.SheetSequence, []),
+    sheetSizes: parseJsonSafe(model.SheetSizes, {}),
+    resolvedSheetSequence: parseJsonSafe(order.ResolvedSheetSequence, [])
+  };
+}
+
+function previewCuttingPlan(payload) {
+  requirePermission(payload.userId, 'settings');
+  var order = findRowById('Orders', 'OrderID', payload.orderId);
+  if (!order) {
+    throw new Error('Order not found');
+  }
+  return computeCuttingPlan(order.ModelNoName, Number(order.Qty) || 0, payload.availableStock || {});
+}
+
+function confirmCuttingPlan(payload) {
+  requirePermission(payload.userId, 'settings');
+  var order = findRowById('Orders', 'OrderID', payload.orderId);
+  if (!order) {
+    throw new Error('Order not found');
+  }
+  var sequence = payload.sequence || [];
+  updateRowById('Orders', 'OrderID', payload.orderId, {
+    ResolvedSheetSequence: JSON.stringify(sequence)
+  });
+  return { orderId: payload.orderId, sheetsPlanned: sequence.length };
+}
+
 function computeShortfallMap(required, produced) {
   var shortfall = {};
   Object.keys(required).forEach(function (partName) {
