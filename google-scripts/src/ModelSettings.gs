@@ -5,14 +5,10 @@ function modelRowToObject(m) {
     partsPerSheet: parseJsonSafe(m.PartsPerSheet, {}),
     bom: parseJsonSafe(m.BOM, {}),
     cuttingTimeTargets: parseJsonSafe(m.CuttingTimeTargets, {}),
-    cuttingSetupTime: m.CuttingSetupTime,
     bendingSequence: parseJsonSafe(m.BendingSequence, []),
     bendingTimeTargets: parseJsonSafe(m.BendingTimeTargets, {}),
-    bendingSetupTime: m.BendingSetupTime,
     assemblyTimeTarget: m.AssemblyTimeTarget,
-    assemblySetupTime: m.AssemblySetupTime,
     fittingTimeTarget: m.FittingTimeTarget,
-    fittingSetupTime: m.FittingSetupTime,
     updatedAt: m.UpdatedAt,
     updatedBy: m.UpdatedBy
   };
@@ -45,14 +41,10 @@ function saveModel(payload) {
     PartsPerSheet: JSON.stringify(payload.partsPerSheet || {}),
     BOM: JSON.stringify(payload.bom || {}),
     CuttingTimeTargets: JSON.stringify(payload.cuttingTimeTargets || {}),
-    CuttingSetupTime: Number(payload.cuttingSetupTime) || 0,
     BendingSequence: JSON.stringify(payload.bendingSequence || []),
     BendingTimeTargets: JSON.stringify(payload.bendingTimeTargets || {}),
-    BendingSetupTime: Number(payload.bendingSetupTime) || 0,
     AssemblyTimeTarget: Number(payload.assemblyTimeTarget) || 0,
-    AssemblySetupTime: Number(payload.assemblySetupTime) || 0,
     FittingTimeTarget: Number(payload.fittingTimeTarget) || 0,
-    FittingSetupTime: Number(payload.fittingSetupTime) || 0,
     UpdatedAt: nowIso(),
     UpdatedBy: payload.userId
   };

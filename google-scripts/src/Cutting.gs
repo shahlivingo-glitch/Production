@@ -55,7 +55,7 @@ function effectiveCuttingTarget(model, sheetCode, sheetSequencePos, unitIndex) {
   if (!isFirstCuttingJobForOrder(sheetSequencePos, unitIndex)) {
     return base;
   }
-  var setup = model ? Number(model.CuttingSetupTime) || 0 : 0;
+  var setup = getSetupTime('cutting');
   return base + setup;
 }
 

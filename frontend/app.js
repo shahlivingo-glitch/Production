@@ -15,6 +15,7 @@ var ADMIN_EXTRA_LABELS = {
   orders: 'Order Form',
   settings: 'Model Settings',
   powderStock: 'Powder Stock',
+  appSettings: 'Setup Times',
   users: 'User Management'
 };
 
@@ -27,7 +28,8 @@ var STAGE_VIEW_HANDLERS = {
   powder: 'renderPowderView',
   powderStock: 'renderPowderStockAdminView',
   fitting: 'renderFittingView',
-  checker: 'renderQCView'
+  checker: 'renderQCView',
+  appSettings: 'renderAppSettingsView'
 };
 
 var state = {

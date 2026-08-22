@@ -17,7 +17,7 @@ function effectiveBendingTarget(model, partName, qty, orderId, excludeQueueId) {
   if (!isFirstBendingJobForPart(orderId, partName, excludeQueueId)) {
     return base;
   }
-  var setup = model ? Number(model.BendingSetupTime) || 0 : 0;
+  var setup = getSetupTime('bending');
   return base + setup;
 }
 

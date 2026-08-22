@@ -17,7 +17,8 @@ var GET_ACTIONS = {
   personalStockList: function (p) { return listAllPersonalStock(p.userId); },
   readyFittingOrders: function (p) { return listReadyFittingOrders(p.userId); },
   fittingOrderDetail: function (p) { return getFittingOrderDetail(p.userId, p.orderId); },
-  checkerQueue: function (p) { return getCheckerQueue(p.userId, p.stage); }
+  checkerQueue: function (p) { return getCheckerQueue(p.userId, p.stage); },
+  appSettings: function (p) { return getAppSettings(p.userId); }
 };
 
 var POST_ACTIONS = {
@@ -40,7 +41,8 @@ var POST_ACTIONS = {
   completeFitting: function (b) { return completeFitting(b); },
   confirmFittingReturnByChecker: function (b) { return confirmFittingReturnByChecker(b); },
   submitAssemblyQC: function (b) { return submitAssemblyQC(b); },
-  submitPowderQC: function (b) { return submitPowderQC(b); }
+  submitPowderQC: function (b) { return submitPowderQC(b); },
+  saveAppSettings: function (b) { return saveAppSettings(b); }
 };
 
 function doGet(e) {

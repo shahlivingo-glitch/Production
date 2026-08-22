@@ -1,6 +1,7 @@
 var TAB_HEADERS = {
   Orders: ['OrderID', 'ModelNoName', 'Qty', 'DXFRefNo', 'ColourPlan', 'DeliveryDeadline', 'CustomerName', 'Status', 'CreatedAt', 'CreatedBy'],
-  ModelSettings: ['ModelNoName', 'SheetSequence', 'PartsPerSheet', 'BOM', 'CuttingTimeTargets', 'CuttingSetupTime', 'BendingSequence', 'BendingTimeTargets', 'BendingSetupTime', 'AssemblyTimeTarget', 'AssemblySetupTime', 'FittingTimeTarget', 'FittingSetupTime', 'UpdatedAt', 'UpdatedBy'],
+  ModelSettings: ['ModelNoName', 'SheetSequence', 'PartsPerSheet', 'BOM', 'CuttingTimeTargets', 'BendingSequence', 'BendingTimeTargets', 'AssemblyTimeTarget', 'FittingTimeTarget', 'UpdatedAt', 'UpdatedBy'],
+  AppSettings: ['CuttingSetupTime', 'BendingSetupTime', 'AssemblySetupTime', 'FittingSetupTime', 'UpdatedAt', 'UpdatedBy'],
   CuttingLog: ['LogID', 'OrderID', 'ModelNoName', 'SheetCode', 'SheetSequencePos', 'UnitIndex', 'Status', 'StartedAt', 'CompletedAt', 'OperatorID', 'Points'],
   CuttingQC: ['QCID', 'OrderID', 'SheetCode', 'CheckedQty', 'ExpectedQty', 'Result', 'FailAction', 'CheckerID', 'Timestamp'],
   BendingQueue: ['QueueID', 'OrderID', 'PartName', 'SheetCode', 'Qty', 'Status', 'Priority', 'StartedAt', 'CompletedAt', 'OperatorID', 'Points'],

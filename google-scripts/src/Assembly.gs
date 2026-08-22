@@ -27,7 +27,7 @@ function effectiveAssemblyTarget(model, unitsAssembled) {
   if (unitsAssembled > 0) {
     return base;
   }
-  return base + (Number(model.AssemblySetupTime) || 0);
+  return base + getSetupTime('assembly');
 }
 
 function completedAssemblyCount(orderId) {

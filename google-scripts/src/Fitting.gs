@@ -12,7 +12,7 @@ function effectiveFittingTarget(model, unitsFitted) {
   if (unitsFitted > 0) {
     return base;
   }
-  return base + (Number(model.FittingSetupTime) || 0);
+  return base + getSetupTime('fitting');
 }
 
 function completedFittingCount(orderId) {
