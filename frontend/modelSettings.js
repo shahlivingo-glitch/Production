@@ -1,4 +1,22 @@
 var modelForm = null;
+var bendingWrapEl = null;
+
+function getAllPartNamesFromSheets() {
+  var names = {};
+  modelForm.sheetRows.forEach(function (row) {
+    row.parts.split(',').forEach(function (token) {
+      var name = token.split(':')[0].trim();
+      if (name) names[name] = true;
+    });
+  });
+  return Object.keys(names).sort();
+}
+
+function refreshBendingDropdowns() {
+  if (bendingWrapEl) {
+    renderBendingRows(bendingWrapEl);
+  }
+}
 
 function emptyModelForm() {
   return {
@@ -172,19 +190,19 @@ function renderModelSettingsForm() {
   var bendingHint = document.createElement('div');
   bendingHint.className = 'muted';
   bendingHint.style.marginBottom = '10px';
-  bendingHint.textContent = 'Minutes to bend ONE piece of that part — must match the part names used above exactly.';
+  bendingHint.textContent = 'Minutes to bend ONE piece of that part. The dropdown lists parts you\'ve entered above.';
   root.appendChild(bendingHint);
 
-  var bendingWrap = document.createElement('div');
-  root.appendChild(bendingWrap);
-  renderBendingRows(bendingWrap);
+  bendingWrapEl = document.createElement('div');
+  root.appendChild(bendingWrapEl);
+  renderBendingRows(bendingWrapEl);
 
   var addBendingBtn = document.createElement('button');
   addBendingBtn.className = 'btn btn-secondary add-row-btn';
   addBendingBtn.textContent = '+ Add Part Time';
   addBendingBtn.addEventListener('click', function () {
     modelForm.bendingRows.push({ partName: '', minutes: '' });
-    renderBendingRows(bendingWrap);
+    renderBendingRows(bendingWrapEl);
   });
   root.appendChild(addBendingBtn);
 
@@ -218,7 +236,10 @@ function renderSheetRows(wrap) {
     var partsInput = document.createElement('input');
     partsInput.placeholder = 'Side:2, Palla Support:3';
     partsInput.value = row.parts;
-    partsInput.addEventListener('input', function (e) { row.parts = e.target.value; });
+    partsInput.addEventListener('input', function (e) {
+      row.parts = e.target.value;
+      refreshBendingDropdowns();
+    });
 
     var minutesInput = document.createElement('input');
     minutesInput.type = 'number';
@@ -288,10 +309,25 @@ function renderBendingRows(wrap) {
     var line = document.createElement('div');
     line.className = 'dynamic-row';
 
-    var nameInput = document.createElement('input');
-    nameInput.placeholder = 'Part name (e.g. Side)';
-    nameInput.value = row.partName;
-    nameInput.addEventListener('input', function (e) { row.partName = e.target.value; });
+    var nameSelect = document.createElement('select');
+    var availableParts = getAllPartNamesFromSheets();
+    if (row.partName && availableParts.indexOf(row.partName) === -1) {
+      availableParts = [row.partName].concat(availableParts);
+    }
+
+    var placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = availableParts.length ? '-- choose part --' : 'Add parts to a sheet first';
+    nameSelect.appendChild(placeholderOpt);
+
+    availableParts.forEach(function (partName) {
+      var opt = document.createElement('option');
+      opt.value = partName;
+      opt.textContent = partName;
+      nameSelect.appendChild(opt);
+    });
+    nameSelect.value = row.partName;
+    nameSelect.addEventListener('change', function (e) { row.partName = e.target.value; });
 
     var minutesInput = document.createElement('input');
     minutesInput.type = 'number';
@@ -300,7 +336,7 @@ function renderBendingRows(wrap) {
     minutesInput.style.maxWidth = '110px';
     minutesInput.addEventListener('input', function (e) { row.minutes = e.target.value; });
 
-    line.appendChild(nameInput);
+    line.appendChild(nameSelect);
     line.appendChild(minutesInput);
 
     if (modelForm.bendingRows.length > 1) {
