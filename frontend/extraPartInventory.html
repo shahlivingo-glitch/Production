@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Extra Part Inventory</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>Extra Part Inventory</h1>
+    <nav class="topbar-nav">
+      <a href="index.html">Cutting Configuration</a>
+      <a href="orders.html">Production Order Form</a>
+      <a href="cuttingStage.html">Cutting Stage</a>
+    </nav>
+  </div>
+
+  <div class="cs-dashboard" style="max-width:900px;">
+    <div class="section-hint">Running stock of extra/surplus parts logged from Cutting Stage — extra sheet cuts and extra parts pulled from existing sheets, accumulated by model, part, and size.</div>
+    <div style="overflow-x:auto;">
+      <table class="po-table">
+        <thead>
+          <tr><th>Model</th><th>Part</th><th>Size</th><th>Qty</th><th>Last Updated</th></tr>
+        </thead>
+        <tbody id="inventory-table-body"></tbody>
+      </table>
+    </div>
+    <div id="inventory-empty" class="empty-state">No extra parts logged yet.</div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="extraPartInventory.js"></script>
+</body>
+</html>

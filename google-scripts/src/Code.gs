@@ -14,6 +14,7 @@ var GET_ACTIONS = {
   planVersionsForModel: function (p) { return listPlanVersionsForModel(p.modelName); },
   planVersion: function (p) { return getPlanVersion(p.versionId); },
   cuttingExtras: function (p) { return listCuttingExtras(p.poNumber); },
+  extraPartInventory: function (p) { return listExtraPartInventory(); },
   runSetup: function (p) {
     setupSpreadsheet();
     return { ran: true };

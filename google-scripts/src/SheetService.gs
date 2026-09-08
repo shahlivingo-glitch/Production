@@ -3,7 +3,8 @@ var TAB_HEADERS = {
   CuttingPlans: ['ModelName', 'PlanName', 'Sheets', 'UpdatedAt'],
   Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'CreatedAt'],
   PlanVersions: ['VersionId', 'ModelName', 'VersionNumber', 'SourcePlanName', 'Sheets', 'CreatedAt', 'Note'],
-  CuttingExtras: ['ExtraId', 'PoNumber', 'Type', 'Details', 'Timestamp']
+  CuttingExtras: ['ExtraId', 'PoNumber', 'Type', 'Details', 'Timestamp'],
+  ExtraPartInventory: ['ModelName', 'PartName', 'Size', 'Qty', 'UpdatedAt']
 };
 
 function getSheet(tabName) {
@@ -77,6 +78,23 @@ function updateRowById(tabName, idColumn, idValue, updates) {
   }
   writeRowUpdates(tabName, existing._rowIndex, updates);
   return findRowById(tabName, idColumn, idValue);
+}
+
+function findRow(tabName, matchFn) {
+  var rows = getAllRows(tabName);
+  for (var i = 0; i < rows.length; i++) {
+    if (matchFn(rows[i])) return rows[i];
+  }
+  return null;
+}
+
+function updateRow(tabName, matchFn, updates) {
+  var existing = findRow(tabName, matchFn);
+  if (!existing) {
+    throw new Error('Row not found in ' + tabName);
+  }
+  writeRowUpdates(tabName, existing._rowIndex, updates);
+  return findRow(tabName, matchFn);
 }
 
 function deleteRowsWhere(tabName, matchFn) {
