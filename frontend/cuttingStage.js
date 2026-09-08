@@ -367,7 +367,9 @@ function sheetLabel(sheet, index) {
 }
 
 function renderPlanTab() {
-  el('plan-version-label').textContent = 'Version ' + activeVersion.versionNumber + ' (from ' + activeVersion.sourcePlanName + ')';
+  el('plan-version-label').textContent = activeVersion.versionId
+    ? 'Version ' + activeVersion.versionNumber + ' (from ' + activeVersion.sourcePlanName + ')'
+    : 'Default plan (from ' + activeVersion.sourcePlanName + ') — not yet saved as a version for this PO';
   el('plan-version-note').value = '';
   setPlanSaveStatus('', '');
 

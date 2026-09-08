@@ -62,14 +62,21 @@ function getActivePlanVersionForOrder(payload) {
     return getPlanVersion(order.PlanVersionId);
   }
 
+  // No version has ever been saved for this PO yet - read the model's
+  // current named plan for display/editing, but do NOT write anything.
+  // A row only ever gets created in PlanVersions when the user clicks
+  // "Save as New Plan Version" (saveNewPlanVersion, below).
   var plan = findPlanRow(order.ModelName, order.PlanName);
   var sheets = plan ? parseJsonSafe(plan.Sheets, []) : [];
-  var versionId = createPlanVersionRow(order.ModelName, order.PlanName, sheets, 'Initial snapshot for ' + payload.poNumber);
-  writeRowUpdates('Orders', order._rowIndex, {
-    PlanVersionId: versionId,
-    SheetCompletion: JSON.stringify(sheets.map(function () { return false; }))
-  });
-  return getPlanVersion(versionId);
+  return {
+    versionId: null,
+    modelName: order.ModelName,
+    versionNumber: 0,
+    sourcePlanName: order.PlanName,
+    sheets: sheets,
+    createdAt: null,
+    note: ''
+  };
 }
 
 function saveNewPlanVersion(payload) {
