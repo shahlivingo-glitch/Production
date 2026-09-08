@@ -25,10 +25,18 @@ function orderRowToObject(r) {
     deliveryDeadline: r.DeliveryDeadline || '',
     partyName: r.PartyName || '',
     planVersionId: r.PlanVersionId || '',
+    sheetCompletion: parseJsonSafe(r.SheetCompletion, []),
     totalSheetsRequired: Number(r.TotalSheetsRequired) || 0,
     cuttingStatus: r.CuttingStatus || 'pending',
     createdAt: r.CreatedAt
   };
+}
+
+function computeCuttingStatus(completion) {
+  if (!completion || completion.length === 0) {
+    return 'pending';
+  }
+  return completion.every(function (v) { return v === true; }) ? 'complete' : 'pending';
 }
 
 function listOrders() {
@@ -80,6 +88,7 @@ function createOrder(payload) {
     DeliveryDeadline: payload.deliveryDeadline || '',
     PartyName: payload.partyName || '',
     PlanVersionId: '',
+    SheetCompletion: JSON.stringify([]),
     TotalSheetsRequired: totalSheetsRequired,
     CuttingStatus: 'pending',
     CreatedAt: nowIso()
@@ -88,11 +97,40 @@ function createOrder(payload) {
   return getOrder(poNumber);
 }
 
-function markOrderCuttingComplete(payload) {
+function setSheetComplete(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
     throw new Error('PO not found: ' + payload.poNumber);
   }
-  writeRowUpdates('Orders', row._rowIndex, { CuttingStatus: 'complete' });
+  var completion = parseJsonSafe(row.SheetCompletion, []);
+  var idx = Number(payload.sheetIndex);
+  if (idx < 0) {
+    throw new Error('Invalid sheet index');
+  }
+  completion[idx] = !!payload.completed;
+  writeRowUpdates('Orders', row._rowIndex, {
+    SheetCompletion: JSON.stringify(completion),
+    CuttingStatus: computeCuttingStatus(completion)
+  });
+  return getOrder(payload.poNumber);
+}
+
+function markAllSheetsComplete(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var completion = parseJsonSafe(row.SheetCompletion, []);
+  if (completion.length === 0 && row.PlanVersionId) {
+    var version = findRowById('PlanVersions', 'VersionId', row.PlanVersionId);
+    if (version) {
+      completion = parseJsonSafe(version.Sheets, []).map(function () { return false; });
+    }
+  }
+  var filled = completion.map(function () { return true; });
+  writeRowUpdates('Orders', row._rowIndex, {
+    SheetCompletion: JSON.stringify(filled),
+    CuttingStatus: computeCuttingStatus(filled)
+  });
   return getOrder(payload.poNumber);
 }

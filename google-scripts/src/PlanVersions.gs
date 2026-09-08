@@ -65,7 +65,10 @@ function getActivePlanVersionForOrder(payload) {
   var plan = findPlanRow(order.ModelName, order.PlanName);
   var sheets = plan ? parseJsonSafe(plan.Sheets, []) : [];
   var versionId = createPlanVersionRow(order.ModelName, order.PlanName, sheets, 'Initial snapshot for ' + payload.poNumber);
-  writeRowUpdates('Orders', order._rowIndex, { PlanVersionId: versionId });
+  writeRowUpdates('Orders', order._rowIndex, {
+    PlanVersionId: versionId,
+    SheetCompletion: JSON.stringify(sheets.map(function () { return false; }))
+  });
   return getPlanVersion(versionId);
 }
 
@@ -74,13 +77,18 @@ function saveNewPlanVersion(payload) {
   if (!order) {
     throw new Error('PO not found: ' + payload.poNumber);
   }
+  var sheets = payload.sheets || [];
   var versionId = createPlanVersionRow(
     order.ModelName,
     order.PlanName,
-    payload.sheets || [],
+    sheets,
     payload.note || ('Modified for ' + payload.poNumber)
   );
-  writeRowUpdates('Orders', order._rowIndex, { PlanVersionId: versionId });
+  writeRowUpdates('Orders', order._rowIndex, {
+    PlanVersionId: versionId,
+    SheetCompletion: JSON.stringify(sheets.map(function () { return false; })),
+    CuttingStatus: 'pending'
+  });
   return getPlanVersion(versionId);
 }
 
@@ -96,6 +104,11 @@ function setActivePlanVersionForOrder(payload) {
   if (String(version.ModelName) !== String(order.ModelName)) {
     throw new Error('That plan version belongs to a different model');
   }
-  writeRowUpdates('Orders', order._rowIndex, { PlanVersionId: payload.versionId });
+  var sheets = parseJsonSafe(version.Sheets, []);
+  writeRowUpdates('Orders', order._rowIndex, {
+    PlanVersionId: payload.versionId,
+    SheetCompletion: JSON.stringify(sheets.map(function () { return false; })),
+    CuttingStatus: 'pending'
+  });
   return getPlanVersion(payload.versionId);
 }

@@ -13,7 +13,7 @@ function initCuttingStage() {
     if (!confirmDiscardPlanIfDirty()) return;
     showDashboard();
   });
-  el('mark-complete-btn').addEventListener('click', markComplete);
+  el('mark-all-complete-btn').addEventListener('click', markAllComplete);
   el('add-sheet-btn').addEventListener('click', addSheet);
   el('save-version-btn').addEventListener('click', saveNewVersion);
   document.querySelectorAll('.cs-tab-btn').forEach(function (btn) {
@@ -117,11 +117,17 @@ function openOrder(poNumber) {
     el('dashboard-view').style.display = 'none';
     el('detail-view').style.display = 'block';
     el('detail-po-title').textContent = currentOrder.poNumber;
+    renderStatusPill();
     renderPoSummary();
     selectTab('plan');
     renderPlanTab();
     renderExtrasTab();
   }).catch(showFatalError);
+}
+
+function renderStatusPill() {
+  var pill = el('detail-status-pill');
+  pill.innerHTML = '<span class="status-pill status-' + currentOrder.cuttingStatus + '">' + currentOrder.cuttingStatus + '</span>';
 }
 
 function cloneSheets(sheets) {
@@ -169,12 +175,26 @@ function renderPoSummary() {
   });
 }
 
-function markComplete() {
-  if (!confirm('Mark ' + currentOrder.poNumber + '\'s cutting as complete?')) return;
-  apiPost('markOrderCuttingComplete', { poNumber: currentOrder.poNumber }).then(function (result) {
+function markAllComplete() {
+  if (!confirm('Mark every sheet in ' + currentOrder.poNumber + ' as complete?')) return;
+  apiPost('markAllSheetsComplete', { poNumber: currentOrder.poNumber }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
-    planDirty = false;
-    showDashboard();
+    currentOrder = result.data;
+    renderStatusPill();
+    renderPlanTab();
+  }).catch(showFatalError);
+}
+
+function toggleSheetComplete(sheetIndex, completed) {
+  apiPost('setSheetComplete', {
+    poNumber: currentOrder.poNumber,
+    sheetIndex: sheetIndex,
+    completed: completed
+  }).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    currentOrder = result.data;
+    renderStatusPill();
+    renderPlanTab();
   }).catch(showFatalError);
 }
 
@@ -212,21 +232,39 @@ function renderPlanTab() {
   });
 }
 
+function isSheetComplete(sheetIndex) {
+  return !!(currentOrder.sheetCompletion && currentOrder.sheetCompletion[sheetIndex]);
+}
+
 function buildPlanSheetCard(sheet, sheetIndex) {
+  var done = isSheetComplete(sheetIndex);
+
   var card = document.createElement('div');
-  card.className = 'cs-sheet-card';
+  card.className = 'cs-sheet-card' + (done ? ' done' : '');
 
   var header = document.createElement('div');
   header.className = 'sheet-header';
-  var title = document.createElement('div');
+
+  var titleWrap = document.createElement('label');
+  titleWrap.className = 'cs-sheet-done-label';
+  var doneCheckbox = document.createElement('input');
+  doneCheckbox.type = 'checkbox';
+  doneCheckbox.checked = done;
+  doneCheckbox.addEventListener('change', function (e) {
+    toggleSheetComplete(sheetIndex, e.target.checked);
+  });
+  var title = document.createElement('span');
   title.className = 'sheet-title';
-  title.textContent = 'Sheet ' + (sheetIndex + 1);
+  title.textContent = 'Sheet ' + (sheetIndex + 1) + (done ? ' — Cut' : '');
+  titleWrap.appendChild(doneCheckbox);
+  titleWrap.appendChild(title);
+
   var removeBtn = document.createElement('button');
   removeBtn.className = 'icon-btn';
   removeBtn.textContent = '×';
   removeBtn.title = 'Remove sheet';
   removeBtn.addEventListener('click', function () { removeSheet(sheetIndex); });
-  header.appendChild(title);
+  header.appendChild(titleWrap);
   header.appendChild(removeBtn);
   card.appendChild(header);
 
@@ -418,11 +456,14 @@ function saveNewVersion() {
     activeVersion = result.data;
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
-    currentOrder.planVersionId = activeVersion.versionId;
-    renderPlanTab();
-    renderExtraPartForm();
-    setPlanSaveStatus('Saved as version ' + activeVersion.versionNumber, '');
-    loadVersionHistory();
+    return apiGet('order', { poNumber: currentOrder.poNumber }).then(function (orderResult) {
+      if (orderResult.ok) currentOrder = orderResult.data;
+      renderStatusPill();
+      renderPlanTab();
+      renderExtraPartForm();
+      setPlanSaveStatus('Saved as version ' + activeVersion.versionNumber, '');
+      loadVersionHistory();
+    });
   }).catch(function () {
     setPlanSaveStatus('Save failed', 'error');
   });
@@ -525,11 +566,14 @@ function useVersionForOrder(versionId) {
     activeVersion = result.data;
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
-    currentOrder.planVersionId = activeVersion.versionId;
-    renderPlanTab();
-    renderExtraPartForm();
-    renderHistoryTab();
-    selectTab('plan');
+    return apiGet('order', { poNumber: currentOrder.poNumber }).then(function (orderResult) {
+      if (orderResult.ok) currentOrder = orderResult.data;
+      renderStatusPill();
+      renderPlanTab();
+      renderExtraPartForm();
+      renderHistoryTab();
+      selectTab('plan');
+    });
   }).catch(showFatalError);
 }
 

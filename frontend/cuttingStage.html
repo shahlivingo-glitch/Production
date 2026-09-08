@@ -27,8 +27,9 @@
     <div class="save-bar">
       <button class="btn-secondary" id="back-to-dashboard-btn">← Back to Dashboard</button>
       <span id="detail-po-title" style="font-weight:700;"></span>
+      <span id="detail-status-pill"></span>
       <span style="flex:1;"></span>
-      <button class="btn-primary" id="mark-complete-btn">Mark Cutting Complete</button>
+      <button class="btn-secondary" id="mark-all-complete-btn">Mark All Sheets Complete</button>
     </div>
 
     <div class="cs-detail">
@@ -52,6 +53,7 @@
           <label>Version Note (optional)</label>
           <input id="plan-version-note" placeholder="e.g. Used thinner sheet due to stock shortage">
         </div>
+        <div class="section-hint">Saving creates a new version and resets every sheet's completion checkmark below (a new version means new sheets to cut).</div>
         <button class="btn-primary btn-block" id="save-version-btn">Save as New Plan Version</button>
       </div>
 
