@@ -4,6 +4,7 @@ function jsonOutput(obj) {
 
 var GET_ACTIONS = {
   cuttingConfigModels: function (p) { return listCuttingConfigModels(); },
+  modelParts: function (p) { return getModelParts(p.modelName); },
   cuttingConfigPlans: function (p) { return listCuttingConfigPlans(p.modelName); },
   cuttingConfigPlan: function (p) { return getCuttingConfigPlan(p.modelName, p.planName); },
   runSetup: function (p) {
@@ -17,6 +18,8 @@ var POST_ACTIONS = {
   createCuttingConfigPlan: function (b) { return createCuttingConfigPlan(b); },
   deleteCuttingConfigModel: function (b) { return deleteCuttingConfigModel(b); },
   deleteCuttingConfigPlan: function (b) { return deleteCuttingConfigPlan(b); },
+  saveModelParts: function (b) { return saveModelParts(b); },
+  removeCuttingConfigPart: function (b) { return removeCuttingConfigPart(b); },
   saveCuttingConfigPlan: function (b) { return saveCuttingConfigPlan(b); }
 };
 

@@ -206,17 +206,22 @@ function deletePlan(planName) {
 }
 
 function selectPlan(planName) {
-  apiGet('cuttingConfigPlan', { modelName: selectedModel, planName: planName }).then(function (result) {
-    if (!result.ok) return showFatalError(result.error);
+  return Promise.all([
+    apiGet('modelParts', { modelName: selectedModel }),
+    apiGet('cuttingConfigPlan', { modelName: selectedModel, planName: planName })
+  ]).then(function (results) {
+    if (!results[0].ok) return showFatalError(results[0].error);
+    if (!results[1].ok) return showFatalError(results[1].error);
     selectedPlan = planName;
-    var data = result.data;
+    var partsData = results[0].data;
+    var planData = results[1].data;
     configState = {
-      modelName: data.modelName,
-      planName: data.planName,
-      parts: Object.keys(data.partsPerUnit).map(function (partName) {
-        return { name: partName, total: Number(data.partsPerUnit[partName]) || 0 };
+      modelName: partsData.modelName,
+      planName: planData.planName,
+      parts: Object.keys(partsData.partsPerUnit).map(function (partName) {
+        return { name: partName, total: Number(partsData.partsPerUnit[partName]) || 0 };
       }),
-      sheets: (data.sheets || []).map(function (s) {
+      sheets: (planData.sheets || []).map(function (s) {
         return {
           width: s.width !== undefined ? s.width : '',
           height: s.height !== undefined ? s.height : '',
@@ -282,14 +287,20 @@ function saveModel() {
       })
     };
   });
-  apiPost('saveCuttingConfigPlan', {
-    modelName: configState.modelName,
-    planName: configState.planName,
-    partsPerUnit: partsPerUnit,
-    sheets: sheets
-  }).then(function (result) {
-    if (!result.ok) {
-      setSaveStatus('Save failed: ' + result.error, 'error');
+  Promise.all([
+    apiPost('saveModelParts', {
+      modelName: configState.modelName,
+      partsPerUnit: partsPerUnit
+    }),
+    apiPost('saveCuttingConfigPlan', {
+      modelName: configState.modelName,
+      planName: configState.planName,
+      sheets: sheets
+    })
+  ]).then(function (results) {
+    var failed = results.filter(function (r) { return !r.ok; })[0];
+    if (failed) {
+      setSaveStatus('Save failed: ' + failed.error, 'error');
       return;
     }
     dirty = false;
@@ -313,7 +324,7 @@ function renderPartsColumn() {
 
   var hint = document.createElement('div');
   hint.className = 'section-hint';
-  hint.textContent = 'Shows remaining qty still needing a sheet assignment. Fully assigned parts drop off this list.';
+  hint.textContent = 'Shared across every plan for this model - edit once here. Shows remaining qty still needing a sheet assignment in the current plan; fully assigned parts drop off this list.';
   body.appendChild(hint);
 
   var visibleParts = configState.parts.filter(function (p) { return getRemainingQty(p.name) > 0; });
@@ -397,7 +408,7 @@ function addPart() {
     return;
   }
   if (configState.parts.some(function (p) { return p.name === name; })) {
-    alert('Part "' + name + '" already exists for this plan.');
+    alert('Part "' + name + '" already exists for this model.');
     return;
   }
 
@@ -409,26 +420,17 @@ function addPart() {
 
 function removePart(index) {
   var part = configState.parts[index];
-  var assigned = getAssignedQty(part.name);
-
-  if (assigned > 0) {
-    var usedIn = 0;
-    configState.sheets.forEach(function (sheet) {
-      sheet.outputs.forEach(function (o) { if (o.partName === part.name) usedIn++; });
-    });
-    if (!confirm('"' + part.name + '" is used in ' + usedIn + ' sheet output row(s). Removing it will also delete those rows. Continue?')) {
-      return;
-    }
+  if (!confirmDiscardIfDirty()) return;
+  if (!confirm('Remove part "' + part.name + '"? This also deletes any sheet-output rows using it, in every plan for this model. Continue?')) {
+    return;
   }
-
-  configState.sheets.forEach(function (sheet) {
-    sheet.outputs = sheet.outputs.filter(function (o) { return o.partName !== part.name; });
-  });
-  configState.parts.splice(index, 1);
-
-  markDirty();
-  renderPartsColumn();
-  renderSheetsColumn();
+  apiPost('removeCuttingConfigPart', {
+    modelName: configState.modelName,
+    partName: part.name
+  }).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    return selectPlan(configState.planName);
+  }).catch(showFatalError);
 }
 
 function renderSheetsColumn() {
