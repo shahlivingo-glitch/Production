@@ -18,6 +18,113 @@ body {
   font-size: 20px;
 }
 
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topbar-nav a {
+  color: #cfd8ff;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.topbar-nav a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.po-layout {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  align-items: flex-start;
+}
+
+.po-form-col {
+  flex: 0 0 380px;
+}
+
+.po-table-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.field-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+}
+
+.field-row input:read-only {
+  background: #f2f4f7;
+  color: #555;
+}
+
+.alert-banner {
+  background: #fff4e5;
+  border: 1px solid #f0c987;
+  color: #7a4b00;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.sheets-required-box {
+  border: 1px solid #e2e5ea;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #fafbfc;
+}
+
+.sheets-required-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sheets-required-table td, .sheets-required-table th {
+  padding: 6px 4px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.sheets-required-table tr.total-row td {
+  font-weight: 700;
+  border-top: 2px solid #ccc;
+  border-bottom: none;
+}
+
+.po-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.po-table th, .po-table td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.po-table th {
+  color: #666;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .save-bar {
   position: sticky;
   top: 0;
