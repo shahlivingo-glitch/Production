@@ -75,6 +75,29 @@ function listExtraPartInventory() {
   });
 }
 
+function listKnownExtraParts() {
+  var seen = {};
+  var result = [];
+  getAllRows('CuttingExtras').forEach(function (r) {
+    if (r.Type !== 'extra-part') {
+      return;
+    }
+    var details = parseJsonSafe(r.Details, {});
+    if (!details.isExtra || !details.partName) {
+      return;
+    }
+    var key = details.partName + '||' + (details.size || '');
+    if (seen[key]) {
+      return;
+    }
+    seen[key] = true;
+    result.push({ partName: details.partName, size: details.size || '' });
+  });
+  return result.sort(function (a, b) {
+    return a.partName < b.partName ? -1 : (a.partName > b.partName ? 1 : 0);
+  });
+}
+
 function listCuttingExtras(poNumber) {
   return getAllRows('CuttingExtras')
     .filter(function (r) { return String(r.PoNumber) === String(poNumber); })

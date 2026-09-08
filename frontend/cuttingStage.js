@@ -4,6 +4,7 @@ var activeVersion = null;
 var workingSheets = null;
 var modelPartNames = [];
 var allModels = [];
+var knownExtraParts = [];
 var versionHistory = [];
 var extras = [];
 var expandedVersionId = null;
@@ -65,22 +66,15 @@ function renderExtraPromptRows() {
       opt.textContent = partName;
       select.appendChild(opt);
     });
+    appendKnownExtraOptions(select);
     var extraOpt = document.createElement('option');
     extraOpt.value = EXTRA_PART_SENTINEL;
-    extraOpt.textContent = '+ Extra Part';
+    extraOpt.textContent = '+ New Extra Part';
     select.appendChild(extraOpt);
 
     select.value = row.isExtra ? EXTRA_PART_SENTINEL : row.partName;
     select.addEventListener('change', function (e) {
-      if (e.target.value === EXTRA_PART_SENTINEL) {
-        row.isExtra = true;
-        row.partName = '';
-        row.size = '';
-      } else {
-        row.isExtra = false;
-        row.partName = e.target.value;
-        delete row.size;
-      }
+      applyExtraSelectValue(row, e.target.value);
       renderExtraPromptRows();
     });
     line.appendChild(select);
@@ -254,17 +248,20 @@ function openOrder(poNumber) {
     apiGet('order', { poNumber: poNumber }),
     apiPost('activePlanVersionForOrder', { poNumber: poNumber }),
     apiGet('cuttingExtras', { poNumber: poNumber }),
-    apiGet('cuttingConfigModels', {})
+    apiGet('cuttingConfigModels', {}),
+    apiGet('knownExtraParts', {})
   ]).then(function (results) {
     if (!results[0].ok) return showFatalError(results[0].error);
     if (!results[1].ok) return showFatalError(results[1].error);
     if (!results[2].ok) return showFatalError(results[2].error);
     if (!results[3].ok) return showFatalError(results[3].error);
+    if (!results[4].ok) return showFatalError(results[4].error);
 
     currentOrder = results[0].data;
     activeVersion = results[1].data;
     extras = results[2].data;
     allModels = results[3].data;
+    knownExtraParts = results[4].data;
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
 
@@ -476,6 +473,40 @@ function buildPlanDimField(labelText, value, onChange) {
 
 var EXTRA_PART_SENTINEL = '__extra__';
 var UNIVERSAL_SENTINEL = '__universal__';
+var KNOWN_EXTRA_PREFIX = '__known__';
+
+function appendKnownExtraOptions(select) {
+  if (knownExtraParts.length === 0) return;
+  var group = document.createElement('optgroup');
+  group.label = 'Previously used extra parts';
+  knownExtraParts.forEach(function (k, i) {
+    var opt = document.createElement('option');
+    opt.value = KNOWN_EXTRA_PREFIX + i;
+    opt.textContent = k.partName + (k.size ? ' (' + k.size + ')' : '');
+    group.appendChild(opt);
+  });
+  select.appendChild(group);
+}
+
+function applyExtraSelectValue(row, value) {
+  if (value === EXTRA_PART_SENTINEL) {
+    row.isExtra = true;
+    row.partName = '';
+    row.size = '';
+    return true;
+  }
+  if (value.indexOf(KNOWN_EXTRA_PREFIX) === 0) {
+    var known = knownExtraParts[Number(value.slice(KNOWN_EXTRA_PREFIX.length))];
+    row.isExtra = true;
+    row.partName = known ? known.partName : '';
+    row.size = known ? known.size : '';
+    return true;
+  }
+  row.isExtra = false;
+  row.partName = value;
+  delete row.size;
+  return false;
+}
 
 function buildExtraModelField(row, defaultModel) {
   if (row.modelName === undefined) {
@@ -526,23 +557,16 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
     opt.textContent = partName;
     select.appendChild(opt);
   });
+  appendKnownExtraOptions(select);
   var extraOpt = document.createElement('option');
   extraOpt.value = EXTRA_PART_SENTINEL;
-  extraOpt.textContent = '+ Extra Part';
+  extraOpt.textContent = '+ New Extra Part';
   select.appendChild(extraOpt);
 
   select.value = output.isExtra ? EXTRA_PART_SENTINEL : (output.partName || '');
   select.addEventListener('change', function (e) {
     var out = workingSheets[sheetIndex].outputs[outputIndex];
-    if (e.target.value === EXTRA_PART_SENTINEL) {
-      out.isExtra = true;
-      out.partName = '';
-      out.size = '';
-    } else {
-      out.isExtra = false;
-      out.partName = e.target.value;
-      delete out.size;
-    }
+    applyExtraSelectValue(out, e.target.value);
     markDirty();
     renderPlanTab();
   });
@@ -943,21 +967,14 @@ function renderExtraPartForm() {
     opt.textContent = partName;
     partSelect.appendChild(opt);
   });
+  appendKnownExtraOptions(partSelect);
   var extraOpt = document.createElement('option');
   extraOpt.value = EXTRA_PART_SENTINEL;
-  extraOpt.textContent = '+ Extra Part';
+  extraOpt.textContent = '+ New Extra Part';
   partSelect.appendChild(extraOpt);
   partSelect.value = state.isExtra ? EXTRA_PART_SENTINEL : state.partName;
   partSelect.addEventListener('change', function (e) {
-    if (e.target.value === EXTRA_PART_SENTINEL) {
-      state.isExtra = true;
-      state.partName = '';
-      state.size = '';
-    } else {
-      state.isExtra = false;
-      state.partName = e.target.value;
-      state.size = '';
-    }
+    applyExtraSelectValue(state, e.target.value);
     renderExtraPartForm();
   });
   partField.appendChild(partLabelEl);
@@ -1060,6 +1077,10 @@ function loadExtras() {
     extras = result.data;
     renderExtrasList();
   }).catch(showFatalError);
+
+  apiGet('knownExtraParts', {}).then(function (result) {
+    if (result.ok) knownExtraParts = result.data;
+  }).catch(function () {});
 }
 
 function renderExtrasList() {
