@@ -76,8 +76,7 @@ function listExtraPartInventory() {
 }
 
 function listKnownExtraParts() {
-  var seen = {};
-  var result = [];
+  var byName = {};
   getAllRows('CuttingExtras').forEach(function (r) {
     if (r.Type !== 'extra-part') {
       return;
@@ -86,14 +85,15 @@ function listKnownExtraParts() {
     if (!details.isExtra || !details.partName) {
       return;
     }
-    var key = details.partName + '||' + (details.size || '');
-    if (seen[key]) {
-      return;
+    var key = String(details.partName).toLowerCase();
+    var existing = byName[key];
+    if (!existing || String(r.Timestamp) > String(existing.timestamp)) {
+      byName[key] = { partName: details.partName, size: details.size || '', timestamp: r.Timestamp };
     }
-    seen[key] = true;
-    result.push({ partName: details.partName, size: details.size || '' });
   });
-  return result.sort(function (a, b) {
+  return Object.keys(byName).map(function (key) {
+    return { partName: byName[key].partName, size: byName[key].size };
+  }).sort(function (a, b) {
     return a.partName < b.partName ? -1 : (a.partName > b.partName ? 1 : 0);
   });
 }

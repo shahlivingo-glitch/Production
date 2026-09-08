@@ -66,10 +66,9 @@ function renderExtraPromptRows() {
       opt.textContent = partName;
       select.appendChild(opt);
     });
-    appendKnownExtraOptions(select);
     var extraOpt = document.createElement('option');
     extraOpt.value = EXTRA_PART_SENTINEL;
-    extraOpt.textContent = '+ New Extra Part';
+    extraOpt.textContent = '+ Extra Part';
     select.appendChild(extraOpt);
 
     select.value = row.isExtra ? EXTRA_PART_SENTINEL : row.partName;
@@ -80,11 +79,7 @@ function renderExtraPromptRows() {
     line.appendChild(select);
 
     if (row.isExtra) {
-      var nameInput = document.createElement('input');
-      nameInput.type = 'text';
-      nameInput.placeholder = 'Extra part name';
-      nameInput.value = row.partName || '';
-      nameInput.addEventListener('input', function (e) { row.partName = e.target.value; });
+      var nameInput = buildExtraNameInput(row, function (size) { sizeInput.value = size; });
       line.appendChild(nameInput);
 
       var sizeInput = document.createElement('input');
@@ -262,6 +257,7 @@ function openOrder(poNumber) {
     extras = results[2].data;
     allModels = results[3].data;
     knownExtraParts = results[4].data;
+    refreshKnownExtraPartsDatalist();
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
 
@@ -473,20 +469,7 @@ function buildPlanDimField(labelText, value, onChange) {
 
 var EXTRA_PART_SENTINEL = '__extra__';
 var UNIVERSAL_SENTINEL = '__universal__';
-var KNOWN_EXTRA_PREFIX = '__known__';
-
-function appendKnownExtraOptions(select) {
-  if (knownExtraParts.length === 0) return;
-  var group = document.createElement('optgroup');
-  group.label = 'Previously used extra parts';
-  knownExtraParts.forEach(function (k, i) {
-    var opt = document.createElement('option');
-    opt.value = KNOWN_EXTRA_PREFIX + i;
-    opt.textContent = k.partName + (k.size ? ' (' + k.size + ')' : '');
-    group.appendChild(opt);
-  });
-  select.appendChild(group);
-}
+var KNOWN_EXTRA_PARTS_DATALIST_ID = 'known-extra-parts-datalist';
 
 function applyExtraSelectValue(row, value) {
   if (value === EXTRA_PART_SENTINEL) {
@@ -495,17 +478,47 @@ function applyExtraSelectValue(row, value) {
     row.size = '';
     return true;
   }
-  if (value.indexOf(KNOWN_EXTRA_PREFIX) === 0) {
-    var known = knownExtraParts[Number(value.slice(KNOWN_EXTRA_PREFIX.length))];
-    row.isExtra = true;
-    row.partName = known ? known.partName : '';
-    row.size = known ? known.size : '';
-    return true;
-  }
   row.isExtra = false;
   row.partName = value;
   delete row.size;
   return false;
+}
+
+function refreshKnownExtraPartsDatalist() {
+  var datalist = el(KNOWN_EXTRA_PARTS_DATALIST_ID);
+  if (!datalist) return;
+  datalist.innerHTML = '';
+  knownExtraParts.forEach(function (k) {
+    var opt = document.createElement('option');
+    opt.value = k.partName;
+    datalist.appendChild(opt);
+  });
+}
+
+function findKnownExtraPartByName(name) {
+  var lower = String(name || '').trim().toLowerCase();
+  if (!lower) return null;
+  for (var i = 0; i < knownExtraParts.length; i++) {
+    if (knownExtraParts[i].partName.toLowerCase() === lower) return knownExtraParts[i];
+  }
+  return null;
+}
+
+function buildExtraNameInput(row, onSizeAutofill) {
+  var nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Extra part name';
+  nameInput.setAttribute('list', KNOWN_EXTRA_PARTS_DATALIST_ID);
+  nameInput.value = row.partName || '';
+  nameInput.addEventListener('input', function (e) {
+    row.partName = e.target.value;
+    var match = findKnownExtraPartByName(e.target.value);
+    if (match && !row.size) {
+      row.size = match.size;
+      onSizeAutofill(match.size);
+    }
+  });
+  return nameInput;
 }
 
 function buildExtraModelField(row, defaultModel) {
@@ -557,10 +570,9 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
     opt.textContent = partName;
     select.appendChild(opt);
   });
-  appendKnownExtraOptions(select);
   var extraOpt = document.createElement('option');
   extraOpt.value = EXTRA_PART_SENTINEL;
-  extraOpt.textContent = '+ New Extra Part';
+  extraOpt.textContent = '+ Extra Part';
   select.appendChild(extraOpt);
 
   select.value = output.isExtra ? EXTRA_PART_SENTINEL : (output.partName || '');
@@ -573,13 +585,8 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
   row.appendChild(select);
 
   if (output.isExtra) {
-    var nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.placeholder = 'Extra part name';
-    nameInput.value = output.partName || '';
-    nameInput.addEventListener('input', function (e) {
-      workingSheets[sheetIndex].outputs[outputIndex].partName = e.target.value;
-    });
+    var out2 = workingSheets[sheetIndex].outputs[outputIndex];
+    var nameInput = buildExtraNameInput(out2, function (size) { sizeInput.value = size; markDirty(); });
     nameInput.addEventListener('change', function () { markDirty(); });
     row.appendChild(nameInput);
 
@@ -967,10 +974,9 @@ function renderExtraPartForm() {
     opt.textContent = partName;
     partSelect.appendChild(opt);
   });
-  appendKnownExtraOptions(partSelect);
   var extraOpt = document.createElement('option');
   extraOpt.value = EXTRA_PART_SENTINEL;
-  extraOpt.textContent = '+ New Extra Part';
+  extraOpt.textContent = '+ Extra Part';
   partSelect.appendChild(extraOpt);
   partSelect.value = state.isExtra ? EXTRA_PART_SENTINEL : state.partName;
   partSelect.addEventListener('change', function (e) {
@@ -986,10 +992,7 @@ function renderExtraPartForm() {
     nameField.className = 'field-row';
     var nameLabelEl = document.createElement('label');
     nameLabelEl.textContent = 'Extra Part Name';
-    var nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.value = state.partName;
-    nameInput.addEventListener('input', function (e) { state.partName = e.target.value; });
+    var nameInput = buildExtraNameInput(state, function (size) { sizeInput.value = size; });
     nameField.appendChild(nameLabelEl);
     nameField.appendChild(nameInput);
     wrap.appendChild(nameField);
@@ -1079,7 +1082,10 @@ function loadExtras() {
   }).catch(showFatalError);
 
   apiGet('knownExtraParts', {}).then(function (result) {
-    if (result.ok) knownExtraParts = result.data;
+    if (result.ok) {
+      knownExtraParts = result.data;
+      refreshKnownExtraPartsDatalist();
+    }
   }).catch(function () {});
 }
 
