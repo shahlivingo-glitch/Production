@@ -125,6 +125,56 @@ body {
   letter-spacing: 0.03em;
 }
 
+.plans-bar {
+  background: #fff;
+  border-bottom: 1px solid #e2e5ea;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.plans-bar-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+}
+
+.plans-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plan-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: #eef1f5;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.plan-pill:hover {
+  background: #e4e8ee;
+}
+
+.plan-pill.selected {
+  background: #eaf1ff;
+  border-color: #2f6fed;
+  color: #2f6fed;
+}
+
+.plan-pill .icon-btn {
+  font-size: 14px;
+  padding: 0 4px;
+}
+
 .save-bar {
   position: sticky;
   top: 0;

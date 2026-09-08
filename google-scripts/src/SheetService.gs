@@ -1,5 +1,5 @@
 var TAB_HEADERS = {
-  CuttingConfig: ['ModelName', 'PartsPerUnit', 'Sheets', 'UpdatedAt']
+  CuttingConfig: ['ModelName', 'PlanName', 'PartsPerUnit', 'Sheets', 'UpdatedAt']
 };
 
 function getSheet(tabName) {

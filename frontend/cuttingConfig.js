@@ -1,5 +1,7 @@
 var models = [];
 var selectedModel = null;
+var plans = [];
+var selectedPlan = null;
 var configState = null;
 var dirty = false;
 
@@ -14,7 +16,7 @@ function markDirty() {
 
 function confirmDiscardIfDirty() {
   if (!dirty) return true;
-  return confirm('You have unsaved changes to "' + selectedModel + '". Discard them?');
+  return confirm('You have unsaved changes to "' + selectedModel + ' / ' + selectedPlan + '". Discard them?');
 }
 
 function loadModels() {
@@ -86,29 +88,131 @@ function addModel() {
 }
 
 function deleteModel(name) {
-  if (!confirm('Delete model "' + name + '"? This cannot be undone.')) return;
+  if (!confirm('Delete model "' + name + '"? This deletes all its plans and cannot be undone.')) return;
   if (name !== selectedModel && !confirmDiscardIfDirty()) return;
   apiPost('deleteCuttingConfigModel', { modelName: name }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     if (selectedModel === name) {
-      selectedModel = null;
-      configState = null;
-      dirty = false;
-      el('save-bar').style.display = 'none';
-      renderPartsColumn();
-      renderSheetsColumn();
+      clearSelection();
     }
     loadModels();
   }).catch(showFatalError);
 }
 
+function clearSelection() {
+  selectedModel = null;
+  plans = [];
+  selectedPlan = null;
+  configState = null;
+  dirty = false;
+  el('save-bar').style.display = 'none';
+  el('plans-bar').style.display = 'none';
+  renderPartsColumn();
+  renderSheetsColumn();
+}
+
 function selectModel(name) {
-  apiGet('cuttingConfigModel', { modelName: name }).then(function (result) {
+  apiGet('cuttingConfigPlans', { modelName: name }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     selectedModel = name;
+    plans = result.data;
+    renderModelList();
+    if (plans.length === 0) {
+      selectedPlan = null;
+      configState = null;
+      renderPlansBar();
+      renderPartsColumn();
+      renderSheetsColumn();
+      return;
+    }
+    selectPlan(plans[0]);
+  }).catch(showFatalError);
+}
+
+function renderPlansBar() {
+  var bar = el('plans-bar');
+  if (!selectedModel) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+
+  var list = el('plans-list');
+  list.innerHTML = '';
+
+  plans.forEach(function (planName) {
+    var pill = document.createElement('div');
+    pill.className = 'plan-pill' + (planName === selectedPlan ? ' selected' : '');
+
+    var label = document.createElement('span');
+    label.textContent = planName;
+    pill.appendChild(label);
+
+    var deleteBtn = document.createElement('button');
+    deleteBtn.className = 'icon-btn';
+    deleteBtn.textContent = '×';
+    deleteBtn.title = 'Delete plan';
+    deleteBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      deletePlan(planName);
+    });
+    pill.appendChild(deleteBtn);
+
+    pill.addEventListener('click', function () {
+      if (planName === selectedPlan) return;
+      if (!confirmDiscardIfDirty()) return;
+      selectPlan(planName);
+    });
+
+    list.appendChild(pill);
+  });
+}
+
+function addPlan() {
+  if (!selectedModel) return;
+  if (!confirmDiscardIfDirty()) return;
+  var name = prompt('Name for the new plan:', 'Plan ' + (plans.length + 1));
+  if (name === null) return;
+  name = name.trim();
+  if (!name) {
+    alert('Enter a plan name.');
+    return;
+  }
+  apiPost('createCuttingConfigPlan', { modelName: selectedModel, planName: name }).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    return apiGet('cuttingConfigPlans', { modelName: selectedModel }).then(function (listResult) {
+      if (!listResult.ok) return showFatalError(listResult.error);
+      plans = listResult.data;
+      selectPlan(name);
+    });
+  }).catch(showFatalError);
+}
+
+function deletePlan(planName) {
+  if (!confirm('Delete plan "' + planName + '"? This cannot be undone.')) return;
+  if (planName !== selectedPlan && !confirmDiscardIfDirty()) return;
+  apiPost('deleteCuttingConfigPlan', { modelName: selectedModel, planName: planName }).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    return apiGet('cuttingConfigPlans', { modelName: selectedModel }).then(function (listResult) {
+      if (!listResult.ok) return showFatalError(listResult.error);
+      plans = listResult.data;
+      if (selectedPlan === planName) {
+        selectPlan(plans[0]);
+      } else {
+        renderPlansBar();
+      }
+    });
+  }).catch(showFatalError);
+}
+
+function selectPlan(planName) {
+  apiGet('cuttingConfigPlan', { modelName: selectedModel, planName: planName }).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    selectedPlan = planName;
     var data = result.data;
     configState = {
       modelName: data.modelName,
+      planName: data.planName,
       parts: Object.keys(data.partsPerUnit).map(function (partName) {
         return { name: partName, total: Number(data.partsPerUnit[partName]) || 0 };
       }),
@@ -126,7 +230,7 @@ function selectModel(name) {
     dirty = false;
     el('save-bar').style.display = 'flex';
     setSaveStatus('', '');
-    renderModelList();
+    renderPlansBar();
     renderPartsColumn();
     renderSheetsColumn();
   }).catch(showFatalError);
@@ -178,8 +282,9 @@ function saveModel() {
       })
     };
   });
-  apiPost('saveCuttingConfigModel', {
+  apiPost('saveCuttingConfigPlan', {
     modelName: configState.modelName,
+    planName: configState.planName,
     partsPerUnit: partsPerUnit,
     sheets: sheets
   }).then(function (result) {
@@ -201,7 +306,7 @@ function renderPartsColumn() {
   if (!configState) {
     var empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = 'Select a model.';
+    empty.textContent = selectedModel ? 'Select or add a plan.' : 'Select a model.';
     body.appendChild(empty);
     return;
   }
@@ -292,7 +397,7 @@ function addPart() {
     return;
   }
   if (configState.parts.some(function (p) { return p.name === name; })) {
-    alert('Part "' + name + '" already exists for this model.');
+    alert('Part "' + name + '" already exists for this plan.');
     return;
   }
 
@@ -333,7 +438,7 @@ function renderSheetsColumn() {
   if (!configState) {
     var empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = 'Select a model.';
+    empty.textContent = selectedModel ? 'Select or add a plan.' : 'Select a model.';
     body.appendChild(empty);
     return;
   }
@@ -496,6 +601,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (e.key === 'Enter') addModel();
   });
   el('save-btn').addEventListener('click', saveModel);
+  el('add-plan-btn').addEventListener('click', addPlan);
   window.addEventListener('beforeunload', function (e) {
     if (!dirty) return;
     e.preventDefault();

@@ -1,4 +1,5 @@
 var models = [];
+var plans = [];
 var selectedModelSheets = null;
 
 var poData = {
@@ -56,6 +57,8 @@ function startNewDraft() {
   el('po-colour').value = '';
   el('po-deadline').value = '';
   el('po-party').value = '';
+  el('po-plan-row').style.display = 'none';
+  plans = [];
   selectedModelSheets = null;
   renderSheetsRequired();
 }
@@ -63,14 +66,66 @@ function startNewDraft() {
 function onModelChange() {
   var modelName = el('po-model').value;
   if (!modelName) {
+    el('po-plan-row').style.display = 'none';
+    plans = [];
     selectedModelSheets = null;
     renderSheetsRequired();
     return;
   }
+
+  el('po-plan-row').style.display = 'flex';
+  var planSelect = el('po-plan');
+  planSelect.innerHTML = '<option value="">Loading…</option>';
   selectedModelSheets = undefined;
   renderSheetsRequired();
-  apiGet('cuttingConfigModel', { modelName: modelName }).then(function (result) {
+
+  apiGet('cuttingConfigPlans', { modelName: modelName }).then(function (result) {
     if (el('po-model').value !== modelName) return;
+    if (!result.ok) {
+      selectedModelSheets = null;
+      renderSheetsRequired();
+      return showFatalError(result.error);
+    }
+    plans = result.data;
+    renderPlanDropdown();
+    if (plans.length === 0) {
+      selectedModelSheets = null;
+      renderSheetsRequired();
+      return;
+    }
+    planSelect.value = plans[0];
+    loadSheetsForPlan(modelName, plans[0]);
+  }).catch(function (err) {
+    if (el('po-model').value !== modelName) return;
+    selectedModelSheets = null;
+    renderSheetsRequired();
+    showFatalError(err);
+  });
+}
+
+function renderPlanDropdown() {
+  var select = el('po-plan');
+  select.innerHTML = '';
+  plans.forEach(function (planName) {
+    var opt = document.createElement('option');
+    opt.value = planName;
+    opt.textContent = planName;
+    select.appendChild(opt);
+  });
+}
+
+function onPlanChange() {
+  var modelName = el('po-model').value;
+  var planName = el('po-plan').value;
+  if (!modelName || !planName) return;
+  loadSheetsForPlan(modelName, planName);
+}
+
+function loadSheetsForPlan(modelName, planName) {
+  selectedModelSheets = undefined;
+  renderSheetsRequired();
+  apiGet('cuttingConfigPlan', { modelName: modelName, planName: planName }).then(function (result) {
+    if (el('po-model').value !== modelName || el('po-plan').value !== planName) return;
     if (!result.ok) {
       selectedModelSheets = null;
       renderSheetsRequired();
@@ -79,7 +134,7 @@ function onModelChange() {
     selectedModelSheets = result.data.sheets || [];
     renderSheetsRequired();
   }).catch(function (err) {
-    if (el('po-model').value !== modelName) return;
+    if (el('po-model').value !== modelName || el('po-plan').value !== planName) return;
     selectedModelSheets = null;
     renderSheetsRequired();
     showFatalError(err);
@@ -104,6 +159,14 @@ function renderSheetsRequired() {
     return;
   }
 
+  if (plans.length === 0 && selectedModelSheets === null) {
+    var noPlan = document.createElement('div');
+    noPlan.className = 'alert-banner';
+    noPlan.textContent = '"' + modelName + '" has no cutting plan configured — sheets required cannot be calculated.';
+    section.appendChild(noPlan);
+    return;
+  }
+
   if (selectedModelSheets === undefined) {
     var loading = document.createElement('div');
     loading.className = 'section-hint';
@@ -119,7 +182,7 @@ function renderSheetsRequired() {
   if (selectedModelSheets.length === 0) {
     var warn = document.createElement('div');
     warn.className = 'alert-banner';
-    warn.textContent = '"' + modelName + '" has no sheets defined in Cutting Configuration — sheets required cannot be calculated.';
+    warn.textContent = 'This plan has no sheets defined in Cutting Configuration — sheets required cannot be calculated.';
     section.appendChild(warn);
     return;
   }
@@ -170,10 +233,15 @@ function renderSheetsRequired() {
 
 function createPO() {
   var modelName = el('po-model').value;
+  var planName = el('po-plan').value;
   var qty = Number(el('po-qty').value) || 0;
 
   if (!modelName) {
     alert('Choose a model.');
+    return;
+  }
+  if (!planName) {
+    alert('Choose a cutting plan.');
     return;
   }
   if (qty <= 0) {
@@ -181,15 +249,15 @@ function createPO() {
     return;
   }
   if (selectedModelSheets === undefined) {
-    alert('Still loading sheet data for this model - try again in a moment.');
+    alert('Still loading sheet data for this plan - try again in a moment.');
     return;
   }
   if (selectedModelSheets === null) {
-    alert('Could not load sheet data for this model.');
+    alert('Could not load sheet data for this plan.');
     return;
   }
   if (selectedModelSheets.length === 0) {
-    if (!confirm('"' + modelName + '" has no sheets defined in Cutting Configuration, so Total Sheets will be 0. Create the PO anyway?')) {
+    if (!confirm('This plan has no sheets defined in Cutting Configuration, so Total Sheets will be 0. Create the PO anyway?')) {
       return;
     }
   }
@@ -200,6 +268,7 @@ function createPO() {
     poNumber: el('po-number').value,
     createdAt: el('po-datetime').value,
     modelNoName: modelName,
+    planName: planName,
     qty: qty,
     totalSheets: totalSheets,
     dxfRefNo: el('po-dxf').value,
@@ -230,6 +299,7 @@ function renderPoTable() {
       '<td>' + po.poNumber + '</td>' +
       '<td>' + po.createdAt + '</td>' +
       '<td>' + po.modelNoName + '</td>' +
+      '<td>' + po.planName + '</td>' +
       '<td>' + po.qty + '</td>' +
       '<td>' + po.totalSheets + '</td>' +
       '<td>' + (po.partyName || '—') + '</td>';
@@ -239,6 +309,7 @@ function renderPoTable() {
 
 document.addEventListener('DOMContentLoaded', function () {
   el('po-model').addEventListener('change', onModelChange);
+  el('po-plan').addEventListener('change', onPlanChange);
   el('po-qty').addEventListener('input', renderSheetsRequired);
   el('create-po-btn').addEventListener('click', createPO);
   initOrdersForm();

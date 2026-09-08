@@ -4,7 +4,8 @@ function jsonOutput(obj) {
 
 var GET_ACTIONS = {
   cuttingConfigModels: function (p) { return listCuttingConfigModels(); },
-  cuttingConfigModel: function (p) { return getCuttingConfigModel(p.modelName); },
+  cuttingConfigPlans: function (p) { return listCuttingConfigPlans(p.modelName); },
+  cuttingConfigPlan: function (p) { return getCuttingConfigPlan(p.modelName, p.planName); },
   runSetup: function (p) {
     setupSpreadsheet();
     return { ran: true };
@@ -13,8 +14,10 @@ var GET_ACTIONS = {
 
 var POST_ACTIONS = {
   createCuttingConfigModel: function (b) { return createCuttingConfigModel(b); },
+  createCuttingConfigPlan: function (b) { return createCuttingConfigPlan(b); },
   deleteCuttingConfigModel: function (b) { return deleteCuttingConfigModel(b); },
-  saveCuttingConfigModel: function (b) { return saveCuttingConfigModel(b); }
+  deleteCuttingConfigPlan: function (b) { return deleteCuttingConfigPlan(b); },
+  saveCuttingConfigPlan: function (b) { return saveCuttingConfigPlan(b); }
 };
 
 function doGet(e) {

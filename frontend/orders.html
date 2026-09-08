@@ -28,6 +28,10 @@
         <label>Model</label>
         <select id="po-model"></select>
       </div>
+      <div class="field-row" id="po-plan-row" style="display:none;">
+        <label>Cutting Plan</label>
+        <select id="po-plan"></select>
+      </div>
       <div class="field-row">
         <label>Qty (units to produce)</label>
         <input type="number" id="po-qty" min="0">
@@ -61,7 +65,7 @@
       <div style="overflow-x:auto;">
         <table class="po-table">
           <thead>
-            <tr><th>PO No.</th><th>Date</th><th>Model</th><th>Qty</th><th>Total Sheets</th><th>Party</th></tr>
+            <tr><th>PO No.</th><th>Date</th><th>Model</th><th>Plan</th><th>Qty</th><th>Total Sheets</th><th>Party</th></tr>
           </thead>
           <tbody id="po-table-body"></tbody>
         </table>
