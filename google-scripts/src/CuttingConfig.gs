@@ -1,6 +1,6 @@
 function listCuttingConfigModels() {
   return getAllRows('CuttingConfig').map(function (r) {
-    return r.ModelName;
+    return String(r.ModelName);
   });
 }
 
@@ -10,7 +10,7 @@ function getCuttingConfigModel(modelName) {
     throw new Error('Model not found: ' + modelName);
   }
   return {
-    modelName: row.ModelName,
+    modelName: String(row.ModelName),
     partsPerUnit: parseJsonSafe(row.PartsPerUnit, {}),
     sheets: parseJsonSafe(row.Sheets, [])
   };
@@ -37,7 +37,7 @@ function createCuttingConfigModel(payload) {
 function deleteCuttingConfigModel(payload) {
   var name = payload.modelName;
   var deletedCount = deleteRowsWhere('CuttingConfig', function (r) {
-    return r.ModelName === name;
+    return String(r.ModelName) === String(name);
   });
   if (!deletedCount) {
     throw new Error('Model not found: ' + name);

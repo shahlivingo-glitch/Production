@@ -38,7 +38,7 @@ function findRows(tabName, matchFn) {
 function findRowById(tabName, idColumn, idValue) {
   var rows = getAllRows(tabName);
   for (var i = 0; i < rows.length; i++) {
-    if (rows[i][idColumn] === idValue) return rows[i];
+    if (String(rows[i][idColumn]) === String(idValue)) return rows[i];
   }
   return null;
 }

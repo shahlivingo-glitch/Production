@@ -61,8 +61,12 @@ function addModel() {
   apiPost('createCuttingConfigModel', { modelName: name }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     input.value = '';
-    loadModels();
-    selectModel(name);
+    return apiGet('cuttingConfigModels', {}).then(function (listResult) {
+      if (!listResult.ok) return showFatalError(listResult.error);
+      models = listResult.data;
+      renderModelList();
+      selectModel(name);
+    });
   }).catch(showFatalError);
 }
 
