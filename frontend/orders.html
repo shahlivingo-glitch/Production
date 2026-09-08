@@ -9,7 +9,10 @@
 <body>
   <div class="topbar">
     <h1>Production Order Form</h1>
-    <nav class="topbar-nav"><a href="index.html">← Cutting Configuration</a></nav>
+    <nav class="topbar-nav">
+      <a href="index.html">Cutting Configuration</a>
+      <a href="cuttingStage.html">Cutting Stage</a>
+    </nav>
   </div>
 
   <div class="po-layout">
@@ -60,17 +63,16 @@
     </div>
 
     <div class="column po-table-col">
-      <h2>Production Orders (this session)</h2>
-      <div class="section-hint">In-memory only for now — this list and the PO counter reset if the page is reloaded.</div>
+      <h2>Production Orders</h2>
       <div style="overflow-x:auto;">
         <table class="po-table">
           <thead>
-            <tr><th>PO No.</th><th>Date</th><th>Model</th><th>Plan</th><th>Qty</th><th>Total Sheets</th><th>Party</th></tr>
+            <tr><th>PO No.</th><th>Date</th><th>Model</th><th>Plan</th><th>Qty</th><th>Total Sheets</th><th>Party</th><th>Cutting Status</th></tr>
           </thead>
           <tbody id="po-table-body"></tbody>
         </table>
       </div>
-      <div id="po-table-empty" class="empty-state">No production orders created yet this session.</div>
+      <div id="po-table-empty" class="empty-state">No production orders created yet.</div>
     </div>
   </div>
 

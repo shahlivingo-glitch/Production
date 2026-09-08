@@ -1,6 +1,9 @@
 var TAB_HEADERS = {
   Models: ['ModelName', 'PartsPerUnit', 'UpdatedAt'],
-  CuttingPlans: ['ModelName', 'PlanName', 'Sheets', 'UpdatedAt']
+  CuttingPlans: ['ModelName', 'PlanName', 'Sheets', 'UpdatedAt'],
+  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'TotalSheetsRequired', 'CuttingStatus', 'CreatedAt'],
+  PlanVersions: ['VersionId', 'ModelName', 'VersionNumber', 'SourcePlanName', 'Sheets', 'CreatedAt', 'Note'],
+  CuttingExtras: ['ExtraId', 'PoNumber', 'Type', 'Details', 'Timestamp']
 };
 
 function getSheet(tabName) {

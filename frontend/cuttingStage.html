@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cutting Stage</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>Cutting Stage</h1>
+    <nav class="topbar-nav">
+      <a href="index.html">Cutting Configuration</a>
+      <a href="orders.html">Production Order Form</a>
+    </nav>
+  </div>
+
+  <div id="dashboard-view">
+    <div class="cs-dashboard">
+      <h2 id="pending-count-heading">Pending POs</h2>
+      <div class="section-hint">Cutting Operator dashboard — POs whose cutting stage isn't yet marked complete.</div>
+      <div id="pending-po-list"></div>
+    </div>
+  </div>
+
+  <div id="detail-view" style="display:none;">
+    <div class="save-bar">
+      <button class="btn-secondary" id="back-to-dashboard-btn">← Back to Dashboard</button>
+      <span id="detail-po-title" style="font-weight:700;"></span>
+      <span style="flex:1;"></span>
+      <button class="btn-primary" id="mark-complete-btn">Mark Cutting Complete</button>
+    </div>
+
+    <div class="cs-detail">
+      <div class="cs-po-summary" id="po-summary"></div>
+
+      <div class="cs-tabs">
+        <button class="cs-tab-btn selected" data-tab="plan">Cutting Plan</button>
+        <button class="cs-tab-btn" data-tab="history">Version History</button>
+        <button class="cs-tab-btn" data-tab="extras">Extras</button>
+      </div>
+
+      <div class="cs-tab-panel" id="tab-plan">
+        <div class="save-bar" style="position:static;">
+          <span id="plan-version-label" style="font-weight:600;"></span>
+          <span class="save-status" id="plan-save-status"></span>
+          <span style="flex:1;"></span>
+          <button class="btn-secondary" id="add-sheet-btn">+ Add Sheet</button>
+        </div>
+        <div id="plan-sheets-body"></div>
+        <div class="field-row" style="margin-top:12px;">
+          <label>Version Note (optional)</label>
+          <input id="plan-version-note" placeholder="e.g. Used thinner sheet due to stock shortage">
+        </div>
+        <button class="btn-primary btn-block" id="save-version-btn">Save as New Plan Version</button>
+      </div>
+
+      <div class="cs-tab-panel" id="tab-history" style="display:none;">
+        <div id="version-history-list"></div>
+      </div>
+
+      <div class="cs-tab-panel" id="tab-extras" style="display:none;">
+        <div class="cs-extra-forms">
+          <div class="cs-extra-form-card">
+            <div class="section-title">Log Extra Sheet Cut</div>
+            <div id="extra-sheet-form"></div>
+          </div>
+          <div class="cs-extra-form-card">
+            <div class="section-title">Log Extra Part from Existing Sheet</div>
+            <div id="extra-part-form"></div>
+          </div>
+        </div>
+        <div class="section-title" style="margin-top:18px;">Logged Extras</div>
+        <div id="extras-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="cuttingStage.js"></script>
+</body>
+</html>

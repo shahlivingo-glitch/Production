@@ -1,16 +1,20 @@
 var models = [];
 var plans = [];
 var selectedModelSheets = null;
-
-var poData = {
-  lastPoNumber: 0,
-  orders: []
-};
+var allOrders = [];
 
 function initOrdersForm() {
   loadModels();
+  loadOrders();
   startNewDraft();
-  renderPoTable();
+}
+
+function loadOrders() {
+  apiGet('orders', {}).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    allOrders = result.data;
+    renderPoTable();
+  }).catch(showFatalError);
 }
 
 function loadModels() {
@@ -41,15 +45,8 @@ function renderModelDropdown() {
   select.value = currentValue;
 }
 
-function formatPoNumber(n) {
-  var padded = String(n);
-  while (padded.length < 4) padded = '0' + padded;
-  return 'PO-' + padded;
-}
-
 function startNewDraft() {
-  poData.lastPoNumber += 1;
-  el('po-number').value = formatPoNumber(poData.lastPoNumber);
+  el('po-number').value = 'Loading…';
   el('po-datetime').value = new Date().toLocaleString();
   el('po-model').value = '';
   el('po-qty').value = '';
@@ -61,6 +58,11 @@ function startNewDraft() {
   plans = [];
   selectedModelSheets = null;
   renderSheetsRequired();
+
+  apiGet('previewNextPoNumber', {}).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    el('po-number').value = result.data.poNumber;
+  }).catch(showFatalError);
 }
 
 function onModelChange() {
@@ -262,24 +264,27 @@ function createPO() {
     }
   }
 
-  var totalSheets = selectedModelSheets.length * qty;
+  var createBtn = el('create-po-btn');
+  createBtn.disabled = true;
 
-  var po = {
-    poNumber: el('po-number').value,
-    createdAt: el('po-datetime').value,
-    modelNoName: modelName,
+  apiPost('createOrder', {
+    modelName: modelName,
     planName: planName,
     qty: qty,
-    totalSheets: totalSheets,
     dxfRefNo: el('po-dxf').value,
     colourPlan: el('po-colour').value,
     deliveryDeadline: el('po-deadline').value,
     partyName: el('po-party').value
-  };
-
-  poData.orders.push(po);
-  renderPoTable();
-  startNewDraft();
+  }).then(function (result) {
+    createBtn.disabled = false;
+    if (!result.ok) return showFatalError(result.error);
+    alert(result.data.poNumber + ' created — ' + result.data.totalSheetsRequired + ' sheets required.');
+    loadOrders();
+    startNewDraft();
+  }).catch(function (err) {
+    createBtn.disabled = false;
+    showFatalError(err);
+  });
 }
 
 function renderPoTable() {
@@ -287,22 +292,23 @@ function renderPoTable() {
   tbody.innerHTML = '';
   var emptyState = el('po-table-empty');
 
-  if (poData.orders.length === 0) {
+  if (allOrders.length === 0) {
     emptyState.style.display = 'block';
     return;
   }
   emptyState.style.display = 'none';
 
-  poData.orders.slice().reverse().forEach(function (po) {
+  allOrders.slice().reverse().forEach(function (po) {
     var tr = document.createElement('tr');
     tr.innerHTML =
       '<td>' + po.poNumber + '</td>' +
-      '<td>' + po.createdAt + '</td>' +
-      '<td>' + po.modelNoName + '</td>' +
+      '<td>' + new Date(po.createdAt).toLocaleString() + '</td>' +
+      '<td>' + po.modelName + '</td>' +
       '<td>' + po.planName + '</td>' +
       '<td>' + po.qty + '</td>' +
-      '<td>' + po.totalSheets + '</td>' +
-      '<td>' + (po.partyName || '—') + '</td>';
+      '<td>' + po.totalSheetsRequired + '</td>' +
+      '<td>' + (po.partyName || '—') + '</td>' +
+      '<td><span class="status-pill status-' + po.cuttingStatus + '">' + po.cuttingStatus + '</span></td>';
     tbody.appendChild(tr);
   });
 }

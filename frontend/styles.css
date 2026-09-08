@@ -24,11 +24,240 @@ body {
   justify-content: space-between;
 }
 
+.topbar-nav {
+  display: flex;
+  gap: 18px;
+}
+
 .topbar-nav a {
   color: #cfd8ff;
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.status-pending {
+  background: #fff4e5;
+  color: #7a4b00;
+}
+
+.status-complete {
+  background: #e6f4ea;
+  color: #1e7b34;
+}
+
+.cs-dashboard {
+  padding: 16px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.cs-po-card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.cs-po-card:hover {
+  background: #f7f9fc;
+}
+
+.cs-po-card-main .cs-po-number {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.cs-po-card-main .muted {
+  color: #666;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.cs-po-card-sheets {
+  text-align: right;
+  font-size: 13px;
+  color: #444;
+  white-space: nowrap;
+}
+
+.cs-po-card-sheets strong {
+  font-size: 18px;
+  display: block;
+  color: #2f6fed;
+}
+
+.cs-detail {
+  padding: 16px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.cs-po-summary {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.cs-po-summary .field-block label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  display: block;
+}
+
+.cs-po-summary .field-block div {
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.cs-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #e2e5ea;
+}
+
+.cs-tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 10px 14px;
+  font-weight: 600;
+  color: #666;
+  border-radius: 0;
+}
+
+.cs-tab-btn.selected {
+  color: #2f6fed;
+  border-bottom-color: #2f6fed;
+}
+
+.cs-sheet-card {
+  background: #fff;
+  border: 1px solid #e2e5ea;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.cs-sheet-total-line {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.cs-output-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cs-output-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.cs-output-row input[type="number"] {
+  width: 70px;
+}
+
+.cs-output-total {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  min-width: 70px;
+}
+
+.cs-version-row {
+  background: #fff;
+  border: 1px solid #e2e5ea;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.cs-version-row.active {
+  border-color: #2f6fed;
+  background: #eaf1ff;
+}
+
+.cs-version-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.cs-version-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.cs-version-preview {
+  margin-top: 10px;
+  font-size: 13px;
+  background: #fafbfc;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.cs-extra-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.cs-extra-form-card {
+  background: #fff;
+  border: 1px solid #e2e5ea;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.cs-extra-row {
+  background: #fff;
+  border: 1px solid #e2e5ea;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.cs-extra-row .cs-extra-type {
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #2f6fed;
+}
+
+.cs-extra-row .cs-extra-time {
+  color: #999;
+  font-size: 12px;
+  float: right;
 }
 
 .topbar-nav a:hover {

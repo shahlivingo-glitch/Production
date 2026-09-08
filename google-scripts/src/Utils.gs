@@ -15,3 +15,13 @@ function parseJsonSafe(value, fallback) {
     return fallback;
   }
 }
+
+function generateId(prefix) {
+  return prefix + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+}
+
+function padNumber(n, width) {
+  var s = String(n);
+  while (s.length < width) s = '0' + s;
+  return s;
+}

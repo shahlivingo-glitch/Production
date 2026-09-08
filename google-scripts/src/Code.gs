@@ -7,6 +7,13 @@ var GET_ACTIONS = {
   modelParts: function (p) { return getModelParts(p.modelName); },
   cuttingConfigPlans: function (p) { return listCuttingConfigPlans(p.modelName); },
   cuttingConfigPlan: function (p) { return getCuttingConfigPlan(p.modelName, p.planName); },
+  orders: function (p) { return listOrders(); },
+  pendingOrders: function (p) { return listPendingOrders(); },
+  order: function (p) { return getOrder(p.poNumber); },
+  previewNextPoNumber: function (p) { return previewNextPoNumber(); },
+  planVersionsForModel: function (p) { return listPlanVersionsForModel(p.modelName); },
+  planVersion: function (p) { return getPlanVersion(p.versionId); },
+  cuttingExtras: function (p) { return listCuttingExtras(p.poNumber); },
   runSetup: function (p) {
     setupSpreadsheet();
     return { ran: true };
@@ -20,7 +27,13 @@ var POST_ACTIONS = {
   deleteCuttingConfigPlan: function (b) { return deleteCuttingConfigPlan(b); },
   saveModelParts: function (b) { return saveModelParts(b); },
   removeCuttingConfigPart: function (b) { return removeCuttingConfigPart(b); },
-  saveCuttingConfigPlan: function (b) { return saveCuttingConfigPlan(b); }
+  saveCuttingConfigPlan: function (b) { return saveCuttingConfigPlan(b); },
+  createOrder: function (b) { return createOrder(b); },
+  markOrderCuttingComplete: function (b) { return markOrderCuttingComplete(b); },
+  activePlanVersionForOrder: function (b) { return getActivePlanVersionForOrder(b); },
+  saveNewPlanVersion: function (b) { return saveNewPlanVersion(b); },
+  setActivePlanVersionForOrder: function (b) { return setActivePlanVersionForOrder(b); },
+  addCuttingExtra: function (b) { return addCuttingExtra(b); }
 };
 
 function doGet(e) {
