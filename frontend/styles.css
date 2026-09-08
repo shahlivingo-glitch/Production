@@ -18,6 +18,18 @@ body {
   font-size: 20px;
 }
 
+.save-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  border-bottom: 1px solid #e2e5ea;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .columns {
   display: flex;
   gap: 16px;
@@ -226,6 +238,11 @@ button {
 
 .save-status.error {
   color: #b3261e;
+}
+
+.save-status.dirty {
+  color: #b8860b;
+  font-weight: 600;
 }
 
 .section-hint {

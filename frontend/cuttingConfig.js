@@ -1,9 +1,20 @@
 var models = [];
 var selectedModel = null;
 var configState = null;
+var dirty = false;
 
 function initCuttingConfig() {
   loadModels();
+}
+
+function markDirty() {
+  dirty = true;
+  setSaveStatus('Unsaved changes', 'dirty');
+}
+
+function confirmDiscardIfDirty() {
+  if (!dirty) return true;
+  return confirm('You have unsaved changes to "' + selectedModel + '". Discard them?');
 }
 
 function loadModels() {
@@ -33,7 +44,6 @@ function renderModelList() {
     var label = document.createElement('div');
     label.className = 'model-row-name';
     label.textContent = name;
-    label.addEventListener('click', function () { selectModel(name); });
 
     var deleteBtn = document.createElement('button');
     deleteBtn.className = 'icon-btn';
@@ -46,7 +56,11 @@ function renderModelList() {
 
     row.appendChild(label);
     row.appendChild(deleteBtn);
-    row.addEventListener('click', function () { selectModel(name); });
+    row.addEventListener('click', function () {
+      if (name === selectedModel) return;
+      if (!confirmDiscardIfDirty()) return;
+      selectModel(name);
+    });
     wrap.appendChild(row);
   });
 }
@@ -58,6 +72,7 @@ function addModel() {
     alert('Enter a model name.');
     return;
   }
+  if (!confirmDiscardIfDirty()) return;
   apiPost('createCuttingConfigModel', { modelName: name }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     input.value = '';
@@ -72,11 +87,14 @@ function addModel() {
 
 function deleteModel(name) {
   if (!confirm('Delete model "' + name + '"? This cannot be undone.')) return;
+  if (name !== selectedModel && !confirmDiscardIfDirty()) return;
   apiPost('deleteCuttingConfigModel', { modelName: name }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     if (selectedModel === name) {
       selectedModel = null;
       configState = null;
+      dirty = false;
+      el('save-bar').style.display = 'none';
       renderPartsColumn();
       renderSheetsColumn();
     }
@@ -105,6 +123,9 @@ function selectModel(name) {
         };
       })
     };
+    dirty = false;
+    el('save-bar').style.display = 'flex';
+    setSaveStatus('', '');
     renderModelList();
     renderPartsColumn();
     renderSheetsColumn();
@@ -137,14 +158,13 @@ function getAvailablePartNames() {
 }
 
 function setSaveStatus(text, cls) {
-  ['parts-save-status', 'sheets-save-status'].forEach(function (id) {
-    var span = el(id);
-    span.textContent = text;
-    span.className = 'save-status' + (cls ? ' ' + cls : '');
-  });
+  var span = el('save-status');
+  span.textContent = text;
+  span.className = 'save-status' + (cls ? ' ' + cls : '');
 }
 
 function saveModel() {
+  if (!configState) return;
   setSaveStatus('Saving…', 'saving');
   var partsPerUnit = {};
   configState.parts.forEach(function (p) { partsPerUnit[p.name] = p.total; });
@@ -167,8 +187,9 @@ function saveModel() {
       setSaveStatus('Save failed: ' + result.error, 'error');
       return;
     }
+    dirty = false;
     setSaveStatus('Saved', '');
-  }).catch(function (err) {
+  }).catch(function () {
     setSaveStatus('Save failed', 'error');
   });
 }
@@ -214,9 +235,9 @@ function renderPartsColumn() {
     qtyInput.addEventListener('change', function (e) {
       var typed = Number(e.target.value) || 0;
       configState.parts[index].total = getAssignedQty(part.name) + typed;
+      markDirty();
       renderPartsColumn();
       renderSheetsColumn();
-      saveModel();
     });
 
     var removeBtn = document.createElement('button');
@@ -276,9 +297,9 @@ function addPart() {
   }
 
   configState.parts.push({ name: name, total: qty });
+  markDirty();
   renderPartsColumn();
   renderSheetsColumn();
-  saveModel();
 }
 
 function removePart(index) {
@@ -300,9 +321,9 @@ function removePart(index) {
   });
   configState.parts.splice(index, 1);
 
+  markDirty();
   renderPartsColumn();
   renderSheetsColumn();
-  saveModel();
 }
 
 function renderSheetsColumn() {
@@ -381,7 +402,7 @@ function buildDimField(labelText, value, onChange) {
   input.type = 'number';
   input.value = value;
   input.addEventListener('input', function (e) { onChange(e.target.value); });
-  input.addEventListener('change', function () { saveModel(); });
+  input.addEventListener('change', function () { markDirty(); });
   wrap.appendChild(label);
   wrap.appendChild(input);
   return wrap;
@@ -413,9 +434,9 @@ function buildOutputRow(sheet, sheetIndex, output, outputIndex) {
   select.value = output.partName || '';
   select.addEventListener('change', function (e) {
     configState.sheets[sheetIndex].outputs[outputIndex].partName = e.target.value;
+    markDirty();
     renderPartsColumn();
     renderSheetsColumn();
-    saveModel();
   });
 
   var qtyInput = document.createElement('input');
@@ -426,9 +447,9 @@ function buildOutputRow(sheet, sheetIndex, output, outputIndex) {
     configState.sheets[sheetIndex].outputs[outputIndex].qty = e.target.value;
   });
   qtyInput.addEventListener('change', function () {
+    markDirty();
     renderPartsColumn();
     renderSheetsColumn();
-    saveModel();
   });
 
   var removeBtn = document.createElement('button');
@@ -445,34 +466,40 @@ function buildOutputRow(sheet, sheetIndex, output, outputIndex) {
 
 function addSheet() {
   configState.sheets.push({ width: '', height: '', thickness: '', outputs: [] });
+  markDirty();
   renderSheetsColumn();
-  saveModel();
 }
 
 function removeSheet(sheetIndex) {
   configState.sheets.splice(sheetIndex, 1);
+  markDirty();
   renderPartsColumn();
   renderSheetsColumn();
-  saveModel();
 }
 
 function addOutputRow(sheetIndex) {
   configState.sheets[sheetIndex].outputs.push({ partName: '', qty: '' });
+  markDirty();
   renderSheetsColumn();
-  saveModel();
 }
 
 function removeOutputRow(sheetIndex, outputIndex) {
   configState.sheets[sheetIndex].outputs.splice(outputIndex, 1);
+  markDirty();
   renderPartsColumn();
   renderSheetsColumn();
-  saveModel();
 }
 
 document.addEventListener('DOMContentLoaded', function () {
   el('add-model-btn').addEventListener('click', addModel);
   el('new-model-name').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') addModel();
+  });
+  el('save-btn').addEventListener('click', saveModel);
+  window.addEventListener('beforeunload', function (e) {
+    if (!dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
   });
   renderPartsColumn();
   renderSheetsColumn();

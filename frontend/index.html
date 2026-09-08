@@ -11,6 +11,11 @@
     <h1>Cutting Configuration</h1>
   </div>
 
+  <div class="save-bar" id="save-bar" style="display:none;">
+    <button class="btn-primary" id="save-btn">Save Changes</button>
+    <span class="save-status" id="save-status"></span>
+  </div>
+
   <div class="columns">
     <div class="column model-col">
       <h2>Models</h2>
@@ -22,12 +27,12 @@
     </div>
 
     <div class="column" id="col-parts">
-      <h2>Parts in One Unit <span class="save-status" id="parts-save-status"></span></h2>
+      <h2>Parts in One Unit</h2>
       <div id="parts-body"></div>
     </div>
 
     <div class="column" id="col-sheets">
-      <h2>Sheets Used for Cutting <span class="save-status" id="sheets-save-status"></span></h2>
+      <h2>Sheets Used for Cutting</h2>
       <div id="sheets-body"></div>
     </div>
   </div>
