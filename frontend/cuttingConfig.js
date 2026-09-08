@@ -275,6 +275,10 @@ function setSaveStatus(text, cls) {
 function saveModel() {
   if (!configState) return;
   setSaveStatus('Saving…', 'saving');
+  var saveBtn = el('save-btn');
+  var originalLabel = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="spinner"></span> Saving…';
   var partsPerUnit = {};
   configState.parts.forEach(function (p) { partsPerUnit[p.name] = p.total; });
   var sheets = configState.sheets.map(function (s) {
@@ -298,6 +302,8 @@ function saveModel() {
       sheets: sheets
     })
   ]).then(function (results) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
     var failed = results.filter(function (r) { return !r.ok; })[0];
     if (failed) {
       setSaveStatus('Save failed: ' + failed.error, 'error');
@@ -306,6 +312,8 @@ function saveModel() {
     dirty = false;
     setSaveStatus('Saved', '');
   }).catch(function () {
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
     setSaveStatus('Save failed', 'error');
   });
 }

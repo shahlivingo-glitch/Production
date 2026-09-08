@@ -677,11 +677,18 @@ function saveNewVersion() {
   });
 
   setPlanSaveStatus('Saving…', 'saving');
+  var saveBtn = el('save-version-btn');
+  var originalLabel = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="spinner"></span> Saving…';
+
   apiPost('saveNewPlanVersion', {
     poNumber: currentOrder.poNumber,
     sheets: sheets,
     note: el('plan-version-note').value
   }).then(function (result) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
     if (!result.ok) {
       setPlanSaveStatus('Save failed: ' + result.error, 'error');
       return;
@@ -699,6 +706,8 @@ function saveNewVersion() {
       loadVersionHistory();
     });
   }).catch(function () {
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
     setPlanSaveStatus('Save failed', 'error');
   });
 }
