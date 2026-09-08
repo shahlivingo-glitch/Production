@@ -63,14 +63,48 @@ function renderExtraPromptRows() {
       opt.textContent = partName;
       select.appendChild(opt);
     });
-    select.value = row.partName;
-    select.addEventListener('change', function (e) { row.partName = e.target.value; });
+    var extraOpt = document.createElement('option');
+    extraOpt.value = EXTRA_PART_SENTINEL;
+    extraOpt.textContent = '+ Extra Part';
+    select.appendChild(extraOpt);
+
+    select.value = row.isExtra ? EXTRA_PART_SENTINEL : row.partName;
+    select.addEventListener('change', function (e) {
+      if (e.target.value === EXTRA_PART_SENTINEL) {
+        row.isExtra = true;
+        row.partName = '';
+        row.size = '';
+      } else {
+        row.isExtra = false;
+        row.partName = e.target.value;
+        delete row.size;
+      }
+      renderExtraPromptRows();
+    });
+    line.appendChild(select);
+
+    if (row.isExtra) {
+      var nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.placeholder = 'Extra part name';
+      nameInput.value = row.partName || '';
+      nameInput.addEventListener('input', function (e) { row.partName = e.target.value; });
+      line.appendChild(nameInput);
+
+      var sizeInput = document.createElement('input');
+      sizeInput.type = 'text';
+      sizeInput.placeholder = 'Size (e.g. 50x100mm)';
+      sizeInput.value = row.size || '';
+      sizeInput.addEventListener('input', function (e) { row.size = e.target.value; });
+      line.appendChild(sizeInput);
+    }
 
     var qtyInput = document.createElement('input');
     qtyInput.type = 'number';
     qtyInput.placeholder = 'Qty';
     qtyInput.value = row.qty;
     qtyInput.addEventListener('input', function (e) { row.qty = e.target.value; });
+    line.appendChild(qtyInput);
 
     var removeBtn = document.createElement('button');
     removeBtn.className = 'icon-btn';
@@ -80,10 +114,8 @@ function renderExtraPromptRows() {
       if (extraPromptState.rows.length === 0) extraPromptState.rows.push({ partName: '', qty: '' });
       renderExtraPromptRows();
     });
-
-    line.appendChild(select);
-    line.appendChild(qtyInput);
     line.appendChild(removeBtn);
+
     wrap.appendChild(line);
   });
 }
@@ -119,15 +151,20 @@ function saveExtraPromptAndProceed() {
   var label = sheetLabel(sourceSheet, sheetIndex);
 
   Promise.all(rowsToSave.map(function (r) {
+    var details = {
+      sourceSheetIndex: sheetIndex,
+      sourceSheetLabel: label,
+      partName: r.partName,
+      qty: Number(r.qty)
+    };
+    if (r.isExtra) {
+      details.isExtra = true;
+      details.size = r.size || '';
+    }
     return apiPost('addCuttingExtra', {
       poNumber: currentOrder.poNumber,
       type: 'extra-part',
-      details: {
-        sourceSheetIndex: sheetIndex,
-        sourceSheetLabel: label,
-        partName: r.partName,
-        qty: Number(r.qty)
-      }
+      details: details
     });
   })).then(function (results) {
     var failed = results.filter(function (r) { return !r.ok; })[0];
@@ -818,7 +855,7 @@ function renderExtraPartForm() {
   var wrap = el('extra-part-form');
   wrap.innerHTML = '';
 
-  var state = { sheetIndex: '', partName: '', qty: '' };
+  var state = { sheetIndex: '', partName: '', qty: '', isExtra: false, size: '' };
 
   var sheetField = document.createElement('div');
   sheetField.className = 'field-row';
@@ -835,6 +872,7 @@ function renderExtraPartForm() {
     opt.textContent = sheetLabel(sheet, i);
     sheetSelect.appendChild(opt);
   });
+  sheetSelect.value = state.sheetIndex;
   sheetSelect.addEventListener('change', function (e) { state.sheetIndex = e.target.value; });
   sheetField.appendChild(sheetLabelEl);
   sheetField.appendChild(sheetSelect);
@@ -855,10 +893,53 @@ function renderExtraPartForm() {
     opt.textContent = partName;
     partSelect.appendChild(opt);
   });
-  partSelect.addEventListener('change', function (e) { state.partName = e.target.value; });
+  var extraOpt = document.createElement('option');
+  extraOpt.value = EXTRA_PART_SENTINEL;
+  extraOpt.textContent = '+ Extra Part';
+  partSelect.appendChild(extraOpt);
+  partSelect.value = state.isExtra ? EXTRA_PART_SENTINEL : state.partName;
+  partSelect.addEventListener('change', function (e) {
+    if (e.target.value === EXTRA_PART_SENTINEL) {
+      state.isExtra = true;
+      state.partName = '';
+      state.size = '';
+    } else {
+      state.isExtra = false;
+      state.partName = e.target.value;
+      state.size = '';
+    }
+    renderExtraPartForm();
+  });
   partField.appendChild(partLabelEl);
   partField.appendChild(partSelect);
   wrap.appendChild(partField);
+
+  if (state.isExtra) {
+    var nameField = document.createElement('div');
+    nameField.className = 'field-row';
+    var nameLabelEl = document.createElement('label');
+    nameLabelEl.textContent = 'Extra Part Name';
+    var nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = state.partName;
+    nameInput.addEventListener('input', function (e) { state.partName = e.target.value; });
+    nameField.appendChild(nameLabelEl);
+    nameField.appendChild(nameInput);
+    wrap.appendChild(nameField);
+
+    var sizeField = document.createElement('div');
+    sizeField.className = 'field-row';
+    var sizeLabelEl = document.createElement('label');
+    sizeLabelEl.textContent = 'Size';
+    var sizeInput = document.createElement('input');
+    sizeInput.type = 'text';
+    sizeInput.placeholder = 'e.g. 50x100mm';
+    sizeInput.value = state.size;
+    sizeInput.addEventListener('input', function (e) { state.size = e.target.value; });
+    sizeField.appendChild(sizeLabelEl);
+    sizeField.appendChild(sizeInput);
+    wrap.appendChild(sizeField);
+  }
 
   var qtyField = document.createElement('div');
   qtyField.className = 'field-row';
@@ -866,6 +947,7 @@ function renderExtraPartForm() {
   qtyLabelEl.textContent = 'Extra Qty';
   var qtyInput = document.createElement('input');
   qtyInput.type = 'number';
+  qtyInput.value = state.qty;
   qtyInput.addEventListener('input', function (e) { state.qty = e.target.value; });
   qtyField.appendChild(qtyLabelEl);
   qtyField.appendChild(qtyInput);
@@ -880,7 +962,7 @@ function renderExtraPartForm() {
       return;
     }
     if (!state.partName) {
-      alert('Choose a part.');
+      alert(state.isExtra ? 'Enter the extra part\'s name.' : 'Choose a part.');
       return;
     }
     if (!(Number(state.qty) > 0)) {
@@ -888,15 +970,20 @@ function renderExtraPartForm() {
       return;
     }
     var idx = Number(state.sheetIndex);
+    var details = {
+      sourceSheetIndex: idx,
+      sourceSheetLabel: sheetLabel(activeVersion.sheets[idx], idx),
+      partName: state.partName,
+      qty: Number(state.qty)
+    };
+    if (state.isExtra) {
+      details.isExtra = true;
+      details.size = state.size || '';
+    }
     apiPost('addCuttingExtra', {
       poNumber: currentOrder.poNumber,
       type: 'extra-part',
-      details: {
-        sourceSheetIndex: idx,
-        sourceSheetLabel: sheetLabel(activeVersion.sheets[idx], idx),
-        partName: state.partName,
-        qty: Number(state.qty)
-      }
+      details: details
     }).then(function (result) {
       if (!result.ok) return showFatalError(result.error);
       renderExtraPartForm();
@@ -938,7 +1025,9 @@ function renderExtrasList() {
       }).join(', ');
       detailText = (dims ? dims + ' mm — ' : '') + parts;
     } else {
-      detailText = extra.details.partName + ' x' + extra.details.qty + ' from ' + (extra.details.sourceSheetLabel || ('Sheet ' + (extra.details.sourceSheetIndex + 1)));
+      detailText = extra.details.partName +
+        (extra.details.isExtra ? ' [extra' + (extra.details.size ? ', ' + extra.details.size : '') + ']' : '') +
+        ' x' + extra.details.qty + ' from ' + (extra.details.sourceSheetLabel || ('Sheet ' + (extra.details.sourceSheetIndex + 1)));
     }
     row.innerHTML =
       '<span class="cs-extra-time">' + new Date(extra.timestamp).toLocaleString() + '</span>' +
