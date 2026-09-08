@@ -3,11 +3,13 @@ var currentOrder = null;
 var activeVersion = null;
 var workingSheets = null;
 var modelPartNames = [];
+var allModels = [];
 var versionHistory = [];
 var extras = [];
 var expandedVersionId = null;
 var planDirty = false;
 var extraPromptState = null;
+var extraPartFormState = null;
 
 function initCuttingStage() {
   el('back-to-dashboard-btn').addEventListener('click', function () {
@@ -97,6 +99,8 @@ function renderExtraPromptRows() {
       sizeInput.value = row.size || '';
       sizeInput.addEventListener('input', function (e) { row.size = e.target.value; });
       line.appendChild(sizeInput);
+
+      line.appendChild(buildExtraModelField(row, currentOrder.modelName));
     }
 
     var qtyInput = document.createElement('input');
@@ -160,6 +164,8 @@ function saveExtraPromptAndProceed() {
     if (r.isExtra) {
       details.isExtra = true;
       details.size = r.size || '';
+      details.isUniversal = !!r.isUniversal;
+      if (!r.isUniversal) details.modelName = r.modelName || currentOrder.modelName;
     }
     return apiPost('addCuttingExtra', {
       poNumber: currentOrder.poNumber,
@@ -247,15 +253,18 @@ function openOrder(poNumber) {
   Promise.all([
     apiGet('order', { poNumber: poNumber }),
     apiPost('activePlanVersionForOrder', { poNumber: poNumber }),
-    apiGet('cuttingExtras', { poNumber: poNumber })
+    apiGet('cuttingExtras', { poNumber: poNumber }),
+    apiGet('cuttingConfigModels', {})
   ]).then(function (results) {
     if (!results[0].ok) return showFatalError(results[0].error);
     if (!results[1].ok) return showFatalError(results[1].error);
     if (!results[2].ok) return showFatalError(results[2].error);
+    if (!results[3].ok) return showFatalError(results[3].error);
 
     currentOrder = results[0].data;
     activeVersion = results[1].data;
     extras = results[2].data;
+    allModels = results[3].data;
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
 
@@ -466,6 +475,41 @@ function buildPlanDimField(labelText, value, onChange) {
 }
 
 var EXTRA_PART_SENTINEL = '__extra__';
+var UNIVERSAL_SENTINEL = '__universal__';
+
+function buildExtraModelField(row, defaultModel) {
+  if (row.modelName === undefined) {
+    row.modelName = defaultModel;
+    row.isUniversal = false;
+  }
+  var select = document.createElement('select');
+  var label = document.createElement('option');
+  label.value = '';
+  label.disabled = true;
+  label.textContent = '-- for which model? --';
+  select.appendChild(label);
+  allModels.forEach(function (name) {
+    var opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  });
+  var universalOpt = document.createElement('option');
+  universalOpt.value = UNIVERSAL_SENTINEL;
+  universalOpt.textContent = 'Universal (any model)';
+  select.appendChild(universalOpt);
+
+  select.value = row.isUniversal ? UNIVERSAL_SENTINEL : row.modelName;
+  select.addEventListener('change', function (e) {
+    if (e.target.value === UNIVERSAL_SENTINEL) {
+      row.isUniversal = true;
+    } else {
+      row.isUniversal = false;
+      row.modelName = e.target.value;
+    }
+  });
+  return select;
+}
 
 function buildPlanOutputRow(sheetIndex, output, outputIndex) {
   var row = document.createElement('div');
@@ -616,6 +660,7 @@ function saveNewVersion() {
       if (orderResult.ok) currentOrder = orderResult.data;
       renderStatusPill();
       renderPlanTab();
+      extraPartFormState = null;
       renderExtraPartForm();
       setPlanSaveStatus('Saved as version ' + activeVersion.versionNumber, '');
       loadVersionHistory();
@@ -726,6 +771,7 @@ function useVersionForOrder(versionId) {
       if (orderResult.ok) currentOrder = orderResult.data;
       renderStatusPill();
       renderPlanTab();
+      extraPartFormState = null;
       renderExtraPartForm();
       renderHistoryTab();
       selectTab('plan');
@@ -735,6 +781,7 @@ function useVersionForOrder(versionId) {
 
 function renderExtrasTab() {
   renderExtraSheetForm();
+  extraPartFormState = null;
   renderExtraPartForm();
   renderExtrasList();
 }
@@ -855,7 +902,10 @@ function renderExtraPartForm() {
   var wrap = el('extra-part-form');
   wrap.innerHTML = '';
 
-  var state = { sheetIndex: '', partName: '', qty: '', isExtra: false, size: '' };
+  if (!extraPartFormState) {
+    extraPartFormState = { sheetIndex: '', partName: '', qty: '', isExtra: false, size: '' };
+  }
+  var state = extraPartFormState;
 
   var sheetField = document.createElement('div');
   sheetField.className = 'field-row';
@@ -939,6 +989,14 @@ function renderExtraPartForm() {
     sizeField.appendChild(sizeLabelEl);
     sizeField.appendChild(sizeInput);
     wrap.appendChild(sizeField);
+
+    var modelField = document.createElement('div');
+    modelField.className = 'field-row';
+    var modelLabelEl = document.createElement('label');
+    modelLabelEl.textContent = 'For Which Model?';
+    modelField.appendChild(modelLabelEl);
+    modelField.appendChild(buildExtraModelField(state, currentOrder.modelName));
+    wrap.appendChild(modelField);
   }
 
   var qtyField = document.createElement('div');
@@ -979,6 +1037,8 @@ function renderExtraPartForm() {
     if (state.isExtra) {
       details.isExtra = true;
       details.size = state.size || '';
+      details.isUniversal = !!state.isUniversal;
+      if (!state.isUniversal) details.modelName = state.modelName || currentOrder.modelName;
     }
     apiPost('addCuttingExtra', {
       poNumber: currentOrder.poNumber,
@@ -986,6 +1046,7 @@ function renderExtraPartForm() {
       details: details
     }).then(function (result) {
       if (!result.ok) return showFatalError(result.error);
+      extraPartFormState = null;
       renderExtraPartForm();
       loadExtras();
     }).catch(showFatalError);
@@ -1025,8 +1086,12 @@ function renderExtrasList() {
       }).join(', ');
       detailText = (dims ? dims + ' mm — ' : '') + parts;
     } else {
+      var modelTag = '';
+      if (extra.details.isExtra) {
+        modelTag = extra.details.isUniversal ? ', Universal' : (extra.details.modelName ? ', for ' + extra.details.modelName : '');
+      }
       detailText = extra.details.partName +
-        (extra.details.isExtra ? ' [extra' + (extra.details.size ? ', ' + extra.details.size : '') + ']' : '') +
+        (extra.details.isExtra ? ' [extra' + (extra.details.size ? ', ' + extra.details.size : '') + modelTag + ']' : '') +
         ' x' + extra.details.qty + ' from ' + (extra.details.sourceSheetLabel || ('Sheet ' + (extra.details.sourceSheetIndex + 1)));
     }
     row.innerHTML =

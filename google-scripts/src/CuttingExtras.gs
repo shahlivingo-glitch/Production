@@ -1,3 +1,5 @@
+var UNIVERSAL_MODEL_TAG = 'Universal';
+
 function addToExtraPartInventory(modelName, partName, size, qty) {
   if (!partName || !qty) {
     return;
@@ -48,7 +50,11 @@ function addCuttingExtra(payload) {
       addToExtraPartInventory(order.ModelName, partName, '', Number(partsProduced[partName]) || 0);
     });
   } else {
-    addToExtraPartInventory(order.ModelName, details.partName, details.size || '', Number(details.qty) || 0);
+    var inventoryModel = order.ModelName;
+    if (details.isExtra) {
+      inventoryModel = details.isUniversal ? UNIVERSAL_MODEL_TAG : (details.modelName || order.ModelName);
+    }
+    addToExtraPartInventory(inventoryModel, details.partName, details.size || '', Number(details.qty) || 0);
   }
 
   return { extraId: extraId };
