@@ -173,11 +173,17 @@ body {
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+  flex-wrap: wrap;
 }
 
 .cs-output-row select {
   flex: 1;
-  min-width: 0;
+  min-width: 120px;
+}
+
+.cs-output-row input[type="text"] {
+  flex: 1;
+  min-width: 100px;
 }
 
 .cs-output-row input[type="number"] {

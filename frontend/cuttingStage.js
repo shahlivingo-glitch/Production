@@ -131,7 +131,12 @@ function cloneSheets(sheets) {
       height: s.height !== undefined ? s.height : '',
       thickness: s.thickness !== undefined ? s.thickness : '',
       outputs: (s.outputs || []).map(function (o) {
-        return { partName: o.partName || '', qty: o.qty !== undefined ? o.qty : '' };
+        var out = { partName: o.partName || '', qty: o.qty !== undefined ? o.qty : '' };
+        if (o.isExtra) {
+          out.isExtra = true;
+          out.size = o.size || '';
+        }
+        return out;
       })
     };
   });
@@ -266,6 +271,8 @@ function buildPlanDimField(labelText, value, onChange) {
   return wrap;
 }
 
+var EXTRA_PART_SENTINEL = '__extra__';
+
 function buildPlanOutputRow(sheetIndex, output, outputIndex) {
   var row = document.createElement('div');
   row.className = 'cs-output-row';
@@ -281,11 +288,49 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
     opt.textContent = partName;
     select.appendChild(opt);
   });
-  select.value = output.partName || '';
+  var extraOpt = document.createElement('option');
+  extraOpt.value = EXTRA_PART_SENTINEL;
+  extraOpt.textContent = '+ Extra Part';
+  select.appendChild(extraOpt);
+
+  select.value = output.isExtra ? EXTRA_PART_SENTINEL : (output.partName || '');
   select.addEventListener('change', function (e) {
-    workingSheets[sheetIndex].outputs[outputIndex].partName = e.target.value;
+    var out = workingSheets[sheetIndex].outputs[outputIndex];
+    if (e.target.value === EXTRA_PART_SENTINEL) {
+      out.isExtra = true;
+      out.partName = '';
+      out.size = '';
+    } else {
+      out.isExtra = false;
+      out.partName = e.target.value;
+      delete out.size;
+    }
     markDirty();
+    renderPlanTab();
   });
+  row.appendChild(select);
+
+  if (output.isExtra) {
+    var nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Extra part name';
+    nameInput.value = output.partName || '';
+    nameInput.addEventListener('input', function (e) {
+      workingSheets[sheetIndex].outputs[outputIndex].partName = e.target.value;
+    });
+    nameInput.addEventListener('change', function () { markDirty(); });
+    row.appendChild(nameInput);
+
+    var sizeInput = document.createElement('input');
+    sizeInput.type = 'text';
+    sizeInput.placeholder = 'Size (e.g. 50x100mm)';
+    sizeInput.value = output.size || '';
+    sizeInput.addEventListener('input', function (e) {
+      workingSheets[sheetIndex].outputs[outputIndex].size = e.target.value;
+    });
+    sizeInput.addEventListener('change', function () { markDirty(); });
+    row.appendChild(sizeInput);
+  }
 
   var qtyInput = document.createElement('input');
   qtyInput.type = 'number';
@@ -307,7 +352,6 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
   removeBtn.title = 'Remove output row';
   removeBtn.addEventListener('click', function () { removeOutputRow(sheetIndex, outputIndex); });
 
-  row.appendChild(select);
   row.appendChild(qtyInput);
   row.appendChild(totalSpan);
   row.appendChild(removeBtn);
@@ -351,7 +395,12 @@ function saveNewVersion() {
       height: Number(s.height) || 0,
       thickness: Number(s.thickness) || 0,
       outputs: s.outputs.map(function (o) {
-        return { partName: o.partName, qty: Number(o.qty) || 0 };
+        var out = { partName: o.partName, qty: Number(o.qty) || 0 };
+        if (o.isExtra) {
+          out.isExtra = true;
+          out.size = o.size || '';
+        }
+        return out;
       })
     };
   });
@@ -456,7 +505,9 @@ function buildVersionPreview(versionId) {
     result.data.sheets.forEach(function (sheet, index) {
       var line = document.createElement('div');
       line.style.marginBottom = '6px';
-      var outputsText = sheet.outputs.map(function (o) { return o.partName + ' x' + o.qty; }).join(', ');
+      var outputsText = sheet.outputs.map(function (o) {
+        return o.partName + (o.isExtra ? ' [extra' + (o.size ? ', ' + o.size : '') + ']' : '') + ' x' + o.qty;
+      }).join(', ');
       line.innerHTML = '<strong>' + sheetLabel(sheet, index) + '</strong> — ' + (outputsText || 'no outputs');
       box.appendChild(line);
     });
