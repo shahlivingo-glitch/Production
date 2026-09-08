@@ -7,6 +7,7 @@ var versionHistory = [];
 var extras = [];
 var expandedVersionId = null;
 var planDirty = false;
+var extraPromptState = null;
 
 function initCuttingStage() {
   el('back-to-dashboard-btn').addEventListener('click', function () {
@@ -19,12 +20,126 @@ function initCuttingStage() {
   document.querySelectorAll('.cs-tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { selectTab(btn.dataset.tab); });
   });
+  el('extra-prompt-skip-btn').addEventListener('click', skipExtraPrompt);
+  el('extra-prompt-save-btn').addEventListener('click', saveExtraPromptAndProceed);
+  el('extra-prompt-add-row-btn').addEventListener('click', function () {
+    extraPromptState.rows.push({ partName: '', qty: '' });
+    renderExtraPromptRows();
+  });
+  el('extra-prompt-overlay').addEventListener('click', function (e) {
+    if (e.target === el('extra-prompt-overlay')) cancelExtraPrompt();
+  });
   window.addEventListener('beforeunload', function (e) {
     if (!planDirty) return;
     e.preventDefault();
     e.returnValue = '';
   });
   showDashboard();
+}
+
+function showExtraPartsModal(sheetIndex, onDone) {
+  var sourceSheet = (activeVersion && activeVersion.sheets[sheetIndex]) || workingSheets[sheetIndex];
+  extraPromptState = { sheetIndex: sheetIndex, rows: [{ partName: '', qty: '' }], onDone: onDone };
+  el('extra-prompt-title').textContent = 'Extra parts from ' + sheetLabel(sourceSheet, sheetIndex) + '\'s full cutting run?';
+  renderExtraPromptRows();
+  el('extra-prompt-overlay').style.display = 'flex';
+}
+
+function renderExtraPromptRows() {
+  var wrap = el('extra-prompt-rows');
+  wrap.innerHTML = '';
+  extraPromptState.rows.forEach(function (row, i) {
+    var line = document.createElement('div');
+    line.className = 'cs-output-row';
+
+    var select = document.createElement('select');
+    var ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = '-- part --';
+    select.appendChild(ph);
+    modelPartNames.forEach(function (partName) {
+      var opt = document.createElement('option');
+      opt.value = partName;
+      opt.textContent = partName;
+      select.appendChild(opt);
+    });
+    select.value = row.partName;
+    select.addEventListener('change', function (e) { row.partName = e.target.value; });
+
+    var qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.placeholder = 'Qty';
+    qtyInput.value = row.qty;
+    qtyInput.addEventListener('input', function (e) { row.qty = e.target.value; });
+
+    var removeBtn = document.createElement('button');
+    removeBtn.className = 'icon-btn';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', function () {
+      extraPromptState.rows.splice(i, 1);
+      if (extraPromptState.rows.length === 0) extraPromptState.rows.push({ partName: '', qty: '' });
+      renderExtraPromptRows();
+    });
+
+    line.appendChild(select);
+    line.appendChild(qtyInput);
+    line.appendChild(removeBtn);
+    wrap.appendChild(line);
+  });
+}
+
+function closeExtraPromptModal() {
+  el('extra-prompt-overlay').style.display = 'none';
+  extraPromptState = null;
+}
+
+function cancelExtraPrompt() {
+  closeExtraPromptModal();
+  renderPlanTab();
+}
+
+function skipExtraPrompt() {
+  var onDone = extraPromptState.onDone;
+  closeExtraPromptModal();
+  onDone();
+}
+
+function saveExtraPromptAndProceed() {
+  var sheetIndex = extraPromptState.sheetIndex;
+  var onDone = extraPromptState.onDone;
+  var rowsToSave = extraPromptState.rows.filter(function (r) { return r.partName && Number(r.qty) > 0; });
+
+  if (rowsToSave.length === 0) {
+    closeExtraPromptModal();
+    onDone();
+    return;
+  }
+
+  var sourceSheet = (activeVersion && activeVersion.sheets[sheetIndex]) || workingSheets[sheetIndex];
+  var label = sheetLabel(sourceSheet, sheetIndex);
+
+  Promise.all(rowsToSave.map(function (r) {
+    return apiPost('addCuttingExtra', {
+      poNumber: currentOrder.poNumber,
+      type: 'extra-part',
+      details: {
+        sourceSheetIndex: sheetIndex,
+        sourceSheetLabel: label,
+        partName: r.partName,
+        qty: Number(r.qty)
+      }
+    });
+  })).then(function (results) {
+    var failed = results.filter(function (r) { return !r.ok; })[0];
+    closeExtraPromptModal();
+    if (failed) showFatalError(failed.error);
+    loadExtras();
+    onDone();
+  }).catch(function (err) {
+    closeExtraPromptModal();
+    showFatalError(err);
+    onDone();
+  });
 }
 
 function confirmDiscardPlanIfDirty() {
@@ -251,7 +366,11 @@ function buildPlanSheetCard(sheet, sheetIndex) {
   doneCheckbox.type = 'checkbox';
   doneCheckbox.checked = done;
   doneCheckbox.addEventListener('change', function (e) {
-    toggleSheetComplete(sheetIndex, e.target.checked);
+    if (e.target.checked) {
+      showExtraPartsModal(sheetIndex, function () { toggleSheetComplete(sheetIndex, true); });
+    } else {
+      toggleSheetComplete(sheetIndex, false);
+    }
   });
   var title = document.createElement('span');
   title.className = 'sheet-title';
