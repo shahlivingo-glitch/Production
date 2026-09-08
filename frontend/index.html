@@ -3,10 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Almirah Production Tracker</title>
+  <title>Cutting Configuration</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Starting fresh</h1>
-  <p>This app is being rebuilt from scratch.</p>
+  <div class="topbar">
+    <h1>Cutting Configuration</h1>
+  </div>
+
+  <div class="columns">
+    <div class="column model-col">
+      <h2>Models</h2>
+      <div class="add-row">
+        <input id="new-model-name" placeholder="New model name">
+        <button class="btn-primary" id="add-model-btn">+ Add</button>
+      </div>
+      <div id="model-list"></div>
+    </div>
+
+    <div class="column" id="col-parts">
+      <h2>Parts in One Unit <span class="save-status" id="parts-save-status"></span></h2>
+      <div id="parts-body"></div>
+    </div>
+
+    <div class="column" id="col-sheets">
+      <h2>Sheets Used for Cutting <span class="save-status" id="sheets-save-status"></span></h2>
+      <div id="sheets-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="cuttingConfig.js"></script>
 </body>
 </html>
