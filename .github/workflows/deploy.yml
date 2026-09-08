@@ -1,0 +1,35 @@
+name: Deploy Apps Script backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'google-scripts/**'
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: google-scripts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Restore clasp credentials
+        run: echo "$CLASP_CREDENTIALS" > ~/.clasprc.json
+        env:
+          CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+
+      - name: Push source to Apps Script
+        run: npx clasp push --force
+
+      - name: Update the live web app deployment
+        run: npx clasp deploy -i "$DEPLOYMENT_ID" -d "Deploy ${{ github.sha }}"
+        env:
+          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
