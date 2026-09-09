@@ -1,7 +1,7 @@
 var TAB_HEADERS = {
   Models: ['ModelName', 'PartsPerUnit', 'UpdatedAt'],
   CuttingPlans: ['ModelName', 'PlanName', 'Sheets', 'UpdatedAt'],
-  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'CreatedAt'],
+  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'BendingCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'BendingStatus', 'CreatedAt'],
   PlanVersions: ['VersionId', 'ModelName', 'VersionNumber', 'SourcePlanName', 'Sheets', 'CreatedAt', 'Note'],
   CuttingExtras: ['ExtraId', 'PoNumber', 'Type', 'Details', 'Timestamp'],
   ExtraPartInventory: ['ModelName', 'PartName', 'Size', 'Qty', 'UpdatedAt']

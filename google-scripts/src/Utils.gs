@@ -25,3 +25,19 @@ function padNumber(n, width) {
   while (s.length < width) s = '0' + s;
   return s;
 }
+
+function flattenPlanOutputs(sheets) {
+  var entries = [];
+  (sheets || []).forEach(function (sheet, sheetIndex) {
+    (sheet.outputs || []).forEach(function (output) {
+      entries.push({
+        sheetIndex: sheetIndex,
+        partName: output.partName,
+        qty: Number(output.qty) || 0,
+        isExtra: !!output.isExtra,
+        size: output.size || ''
+      });
+    });
+  });
+  return entries;
+}

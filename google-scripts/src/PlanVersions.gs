@@ -94,7 +94,9 @@ function saveNewPlanVersion(payload) {
   writeRowUpdates('Orders', order._rowIndex, {
     PlanVersionId: versionId,
     SheetCompletion: JSON.stringify(sheets.map(function () { return false; })),
-    CuttingStatus: 'pending'
+    BendingCompletion: JSON.stringify(flattenPlanOutputs(sheets).map(function () { return false; })),
+    CuttingStatus: 'pending',
+    BendingStatus: 'pending'
   });
   return getPlanVersion(versionId);
 }
@@ -115,7 +117,9 @@ function setActivePlanVersionForOrder(payload) {
   writeRowUpdates('Orders', order._rowIndex, {
     PlanVersionId: payload.versionId,
     SheetCompletion: JSON.stringify(sheets.map(function () { return false; })),
-    CuttingStatus: 'pending'
+    BendingCompletion: JSON.stringify(flattenPlanOutputs(sheets).map(function () { return false; })),
+    CuttingStatus: 'pending',
+    BendingStatus: 'pending'
   });
   return getPlanVersion(payload.versionId);
 }

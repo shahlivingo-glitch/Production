@@ -26,17 +26,38 @@ function orderRowToObject(r) {
     partyName: r.PartyName || '',
     planVersionId: r.PlanVersionId || '',
     sheetCompletion: parseJsonSafe(r.SheetCompletion, []),
+    bendingCompletion: parseJsonSafe(r.BendingCompletion, []),
     totalSheetsRequired: Number(r.TotalSheetsRequired) || 0,
     cuttingStatus: r.CuttingStatus || 'pending',
+    bendingStatus: r.BendingStatus || 'pending',
     createdAt: r.CreatedAt
   };
 }
 
-function computeCuttingStatus(completion) {
-  if (!completion || completion.length === 0) {
-    return 'pending';
+// completion arrays are built via completion[idx] = value, which on a
+// sparse/short array leaves untouched indices as real "holes" - and
+// Array.prototype.every SKIPS holes entirely rather than treating them as
+// false. So "every" on a partially-filled array can come back true after
+// only the FIRST index has ever been touched. Always check against the
+// known true total instead of trusting completion.length or .every().
+function isCompletionFull(completion, totalCount) {
+  if (!totalCount) {
+    return false;
   }
-  return completion.every(function (v) { return v === true; }) ? 'complete' : 'pending';
+  for (var i = 0; i < totalCount; i++) {
+    if (!completion || completion[i] !== true) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function computeCuttingStatus(completion, totalCount) {
+  return isCompletionFull(completion, totalCount) ? 'complete' : 'pending';
+}
+
+function computeBendingStatus(completion, totalCount) {
+  return isCompletionFull(completion, totalCount) ? 'complete' : 'pending';
 }
 
 function listOrders() {
@@ -89,8 +110,10 @@ function createOrder(payload) {
     PartyName: payload.partyName || '',
     PlanVersionId: '',
     SheetCompletion: JSON.stringify([]),
+    BendingCompletion: JSON.stringify([]),
     TotalSheetsRequired: totalSheetsRequired,
     CuttingStatus: 'pending',
+    BendingStatus: 'pending',
     CreatedAt: nowIso()
   });
 
@@ -102,15 +125,16 @@ function setSheetComplete(payload) {
   if (!row) {
     throw new Error('PO not found: ' + payload.poNumber);
   }
-  var completion = parseJsonSafe(row.SheetCompletion, []);
   var idx = Number(payload.sheetIndex);
   if (idx < 0) {
     throw new Error('Invalid sheet index');
   }
+  var totalSheets = getOrderActiveSheets(row).length;
+  var completion = parseJsonSafe(row.SheetCompletion, []);
   completion[idx] = !!payload.completed;
   writeRowUpdates('Orders', row._rowIndex, {
     SheetCompletion: JSON.stringify(completion),
-    CuttingStatus: computeCuttingStatus(completion)
+    CuttingStatus: computeCuttingStatus(completion, totalSheets)
   });
   return getOrder(payload.poNumber);
 }
@@ -120,17 +144,14 @@ function markAllSheetsComplete(payload) {
   if (!row) {
     throw new Error('PO not found: ' + payload.poNumber);
   }
-  var completion = parseJsonSafe(row.SheetCompletion, []);
-  if (completion.length === 0 && row.PlanVersionId) {
-    var version = findRowById('PlanVersions', 'VersionId', row.PlanVersionId);
-    if (version) {
-      completion = parseJsonSafe(version.Sheets, []).map(function () { return false; });
-    }
+  var totalSheets = getOrderActiveSheets(row).length;
+  var filled = [];
+  for (var i = 0; i < totalSheets; i++) {
+    filled.push(true);
   }
-  var filled = completion.map(function () { return true; });
   writeRowUpdates('Orders', row._rowIndex, {
     SheetCompletion: JSON.stringify(filled),
-    CuttingStatus: computeCuttingStatus(filled)
+    CuttingStatus: computeCuttingStatus(filled, totalSheets)
   });
   return getOrder(payload.poNumber);
 }

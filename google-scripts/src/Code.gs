@@ -16,6 +16,8 @@ var GET_ACTIONS = {
   cuttingExtras: function (p) { return listCuttingExtras(p.poNumber); },
   extraPartInventory: function (p) { return listExtraPartInventory(); },
   knownExtraParts: function (p) { return listKnownExtraParts(); },
+  pendingBendingOrders: function (p) { return listPendingBendingOrders(); },
+  bendingQueueForOrder: function (p) { return getBendingQueueForOrder(p.poNumber); },
   runSetup: function (p) {
     setupSpreadsheet();
     return { ran: true };
@@ -36,7 +38,9 @@ var POST_ACTIONS = {
   activePlanVersionForOrder: function (b) { return getActivePlanVersionForOrder(b); },
   saveNewPlanVersion: function (b) { return saveNewPlanVersion(b); },
   setActivePlanVersionForOrder: function (b) { return setActivePlanVersionForOrder(b); },
-  addCuttingExtra: function (b) { return addCuttingExtra(b); }
+  addCuttingExtra: function (b) { return addCuttingExtra(b); },
+  setBendingComplete: function (b) { return setBendingComplete(b); },
+  markAllBendingComplete: function (b) { return markAllBendingComplete(b); }
 };
 
 function doGet(e) {
