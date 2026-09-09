@@ -10,11 +10,25 @@ function initOrdersForm() {
 }
 
 function loadOrders() {
+  el('po-loading').style.display = 'flex';
+  el('po-error').style.display = 'none';
+  el('po-table-wrap').style.display = 'none';
+  el('po-table-empty').style.display = 'none';
+
   apiGet('orders', {}).then(function (result) {
-    if (!result.ok) return showFatalError(result.error);
+    el('po-loading').style.display = 'none';
+    if (!result.ok) {
+      el('po-error').textContent = 'Could not load Production Orders: ' + result.error;
+      el('po-error').style.display = 'block';
+      return;
+    }
     allOrders = result.data;
     renderPoTable();
-  }).catch(showFatalError);
+  }).catch(function (err) {
+    el('po-loading').style.display = 'none';
+    el('po-error').textContent = 'Could not load Production Orders: ' + (err && err.message ? err.message : err);
+    el('po-error').style.display = 'block';
+  });
 }
 
 function loadModels() {
@@ -294,9 +308,11 @@ function renderPoTable() {
 
   if (allOrders.length === 0) {
     emptyState.style.display = 'block';
+    el('po-table-wrap').style.display = 'none';
     return;
   }
   emptyState.style.display = 'none';
+  el('po-table-wrap').style.display = 'block';
 
   allOrders.slice().reverse().forEach(function (po) {
     var tr = document.createElement('tr');

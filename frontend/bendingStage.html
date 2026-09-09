@@ -24,6 +24,11 @@
     <div class="cs-dashboard">
       <h2 id="pending-count-heading">Pending Bending</h2>
       <div class="section-hint">Parts unlock here as their source sheet is marked done in Cutting. Bender checks them off one by one, same as the cutter does per sheet.</div>
+      <div id="pending-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading Pending Bending…</p>
+      </div>
+      <div id="pending-error" class="alert-banner" style="display:none;"></div>
       <div id="pending-po-list"></div>
     </div>
   </div>

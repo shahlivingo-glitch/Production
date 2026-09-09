@@ -20,11 +20,24 @@ function confirmDiscardIfDirty() {
 }
 
 function loadModels() {
+  el('model-loading').style.display = 'flex';
+  el('model-error').style.display = 'none';
+  el('model-list').innerHTML = '';
+
   apiGet('cuttingConfigModels', {}).then(function (result) {
-    if (!result.ok) return showFatalError(result.error);
+    el('model-loading').style.display = 'none';
+    if (!result.ok) {
+      el('model-error').textContent = 'Could not load Models: ' + result.error;
+      el('model-error').style.display = 'block';
+      return;
+    }
     models = result.data;
     renderModelList();
-  }).catch(showFatalError);
+  }).catch(function (err) {
+    el('model-loading').style.display = 'none';
+    el('model-error').textContent = 'Could not load Models: ' + (err && err.message ? err.message : err);
+    el('model-error').style.display = 'block';
+  });
 }
 
 function renderModelList() {

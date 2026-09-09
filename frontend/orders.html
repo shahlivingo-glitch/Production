@@ -69,7 +69,12 @@
 
     <div class="column po-table-col">
       <h2>Production Orders</h2>
-      <div style="overflow-x:auto;">
+      <div id="po-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading Production Orders…</p>
+      </div>
+      <div id="po-error" class="alert-banner" style="display:none;"></div>
+      <div id="po-table-wrap" style="overflow-x:auto; display:none;">
         <table class="po-table">
           <thead>
             <tr><th>PO No.</th><th>Date</th><th>Model</th><th>Plan</th><th>Qty</th><th>Total Sheets</th><th>Party</th><th>Cutting Status</th></tr>
@@ -77,7 +82,7 @@
           <tbody id="po-table-body"></tbody>
         </table>
       </div>
-      <div id="po-table-empty" class="empty-state">No production orders created yet.</div>
+      <div id="po-table-empty" class="empty-state" style="display:none;">No production orders created yet.</div>
     </div>
   </div>
 

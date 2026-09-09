@@ -15,11 +15,24 @@ function showBendingDashboard() {
 }
 
 function loadPendingBendingOrders() {
+  el('pending-loading').style.display = 'flex';
+  el('pending-error').style.display = 'none';
+  el('pending-po-list').innerHTML = '';
+
   apiGet('pendingBendingOrders', {}).then(function (result) {
-    if (!result.ok) return showFatalError(result.error);
+    el('pending-loading').style.display = 'none';
+    if (!result.ok) {
+      el('pending-error').textContent = 'Could not load Pending Bending: ' + result.error;
+      el('pending-error').style.display = 'block';
+      return;
+    }
     pendingBendingOrders = result.data;
     renderBendingDashboard();
-  }).catch(showFatalError);
+  }).catch(function (err) {
+    el('pending-loading').style.display = 'none';
+    el('pending-error').textContent = 'Could not load Pending Bending: ' + (err && err.message ? err.message : err);
+    el('pending-error').style.display = 'block';
+  });
 }
 
 function renderBendingDashboard() {

@@ -22,7 +22,12 @@
 
   <div class="cs-dashboard" style="max-width:900px;">
     <div class="section-hint">Running stock of extra/surplus parts logged from Cutting Stage — extra sheet cuts and extra parts pulled from existing sheets, accumulated by model, part, and size.</div>
-    <div style="overflow-x:auto;">
+    <div id="inventory-loading" class="loading-state">
+      <div class="loading-spinner-lg"></div>
+      <p>Loading Extra Part Inventory…</p>
+    </div>
+    <div id="inventory-error" class="alert-banner" style="display:none;"></div>
+    <div id="inventory-table-wrap" style="overflow-x:auto; display:none;">
       <table class="po-table">
         <thead>
           <tr><th>Model</th><th>Part</th><th>Size</th><th>Qty</th><th>Last Updated</th></tr>
@@ -30,7 +35,7 @@
         <tbody id="inventory-table-body"></tbody>
       </table>
     </div>
-    <div id="inventory-empty" class="empty-state">No extra parts logged yet.</div>
+    <div id="inventory-empty" class="empty-state" style="display:none;">No extra parts logged yet.</div>
   </div>
 
   <script src="app.js"></script>
