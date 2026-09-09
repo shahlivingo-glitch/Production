@@ -197,11 +197,24 @@ function showDashboard() {
 }
 
 function loadPendingOrders() {
+  el('pending-loading').style.display = 'flex';
+  el('pending-error').style.display = 'none';
+  el('pending-po-list').innerHTML = '';
+
   apiGet('pendingOrders', {}).then(function (result) {
-    if (!result.ok) return showFatalError(result.error);
+    el('pending-loading').style.display = 'none';
+    if (!result.ok) {
+      el('pending-error').textContent = 'Could not load Pending POs: ' + result.error;
+      el('pending-error').style.display = 'block';
+      return;
+    }
     pendingOrders = result.data;
     renderDashboard();
-  }).catch(showFatalError);
+  }).catch(function (err) {
+    el('pending-loading').style.display = 'none';
+    el('pending-error').textContent = 'Could not load Pending POs: ' + (err && err.message ? err.message : err);
+    el('pending-error').style.display = 'block';
+  });
 }
 
 function renderDashboard() {

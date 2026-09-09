@@ -24,6 +24,11 @@
     <div class="cs-dashboard">
       <h2 id="pending-count-heading">Pending POs</h2>
       <div class="section-hint">Cutting Operator dashboard — POs whose cutting stage isn't yet marked complete.</div>
+      <div id="pending-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading Pending POs…</p>
+      </div>
+      <div id="pending-error" class="alert-banner" style="display:none;"></div>
       <div id="pending-po-list"></div>
     </div>
   </div>

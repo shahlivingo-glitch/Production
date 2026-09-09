@@ -185,6 +185,33 @@ a { color: var(--color-accent); }
   border-top-color: var(--color-muted-foreground);
 }
 
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: 56px 20px;
+  color: var(--color-muted-foreground);
+  text-align: center;
+}
+
+.loading-state p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.loading-spinner-lg {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(30, 58, 95, 0.15);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
 /* ============================================================
    Top bar
    ============================================================ */
