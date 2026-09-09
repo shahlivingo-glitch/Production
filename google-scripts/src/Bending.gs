@@ -1,9 +1,16 @@
 function getOrderActiveSheets(order) {
-  if (!order.PlanVersionId) {
-    return [];
+  // Mirrors getActivePlanVersionForOrder's fallback (PlanVersions.gs): an
+  // order has no PlanVersionId at all until a version is explicitly saved
+  // for it - until then it's still following the model's named plan
+  // directly. Returning [] in that case (as this used to) makes Cutting's
+  // own completion tracking and Bending's queue both see zero sheets for
+  // every order that hasn't saved a version yet, which is the common case.
+  if (order.PlanVersionId) {
+    var version = findRowById('PlanVersions', 'VersionId', order.PlanVersionId);
+    return version ? parseJsonSafe(version.Sheets, []) : [];
   }
-  var version = findRowById('PlanVersions', 'VersionId', order.PlanVersionId);
-  return version ? parseJsonSafe(version.Sheets, []) : [];
+  var plan = findPlanRow(order.ModelName, order.PlanName);
+  return plan ? parseJsonSafe(plan.Sheets, []) : [];
 }
 
 function sheetLabelForBending(sheet, sheetIndex) {
