@@ -82,11 +82,30 @@ after `runSetup`, not just that the API returns 200.
   Plan (editable sheet-by-sheet breakdown, versioned — see below),
   Version History, Extras (ad-hoc logging). Per-sheet "done" checkboxes
   drive the PO's overall cutting status.
+- **`frontend/bendingStage.html` — Bending Stage.** Dashboard (POs with
+  at least one sheet cut but bending not yet complete) → per-PO
+  checklist. Mirrors Cutting Stage's per-sheet checkbox flow but at
+  part-output granularity: marking a sheet done in Cutting is what
+  *unlocks* that sheet's part-output rows here: no plan editing or
+  versioning of its own, it just derives from Cutting's data.
 - **`frontend/extraPartInventory.html` — Extra Part Inventory.**
   Read-only table, auto-tallied running stock of extra/surplus parts
   logged from Cutting Stage.
 
-All four pages link to each other via a shared top nav.
+All five pages link to each other via a shared top nav.
+
+## Styling
+
+Single shared `frontend/styles.css` (CSS custom properties for
+color/spacing/radius/motion tokens, Fira Sans + Fira Code from Google
+Fonts, tabular-nums on numeric columns). Generated with the
+`ui-ux-pro-max` skill's `--design-system` search treating this as an
+internal dense manufacturing dashboard (not a marketing site) —
+Minimalism & Swiss Style, navy/blue palette. Animations are plain CSS
+(fade/rise entrance with a light nth-child stagger, modal/tab fade-in
+via the existing display:none↔block toggles — no JS timing code needed
+for either), always wrapped in `prefers-reduced-motion` guards. No
+animation library added; stays framework-free like the rest of the app.
 
 ## Data model (current, as of `SheetService.gs`)
 
@@ -104,9 +123,14 @@ All four pages link to each other via a shared top nav.
   no structure), DeliveryDeadline, PartyName, PlanVersionId (empty
   until a version is explicitly saved for this PO — see Versioning),
   SheetCompletion (JSON array of booleans, indexed to whichever
-  version/plan is currently active), TotalSheetsRequired (snapshotted
-  at creation), CuttingStatus (`pending`/`complete`, **derived** from
-  SheetCompletion, not manually settable), CreatedAt.
+  version/plan is currently active), BendingCompletion (JSON array of
+  booleans, one per *output row* across all sheets in flattened order —
+  see `flattenPlanOutputs` in `Utils.gs` — not one per sheet), 
+  TotalSheetsRequired (snapshotted at creation), CuttingStatus
+  (`pending`/`complete`, **derived** from SheetCompletion), BendingStatus
+  (same, derived from BendingCompletion), CreatedAt. Both completion
+  arrays are positionally tied to the *active plan version's* sheets and
+  reset together whenever that version changes.
 - `PlanVersions`: VersionId, ModelName, VersionNumber (per-model
   counter, 1-based), SourcePlanName, Sheets (same shape as
   CuttingPlans.Sheets), CreatedAt, Note. Only ever created by an
@@ -177,9 +201,31 @@ All four pages link to each other via a shared top nav.
    the active version changes (new version saved, or an old one
    reactivated), since sheet *indices* from a different plan don't mean
    the same thing. `CuttingStatus` is never set directly by a
-   button — it's always `computeCuttingStatus(completion)`, i.e.
-   `complete` iff every tracked sheet is checked.
-7. **Extra parts have three related but distinct concepts, easy to
+   button — it's always `computeCuttingStatus(completion, totalCount)`,
+   i.e. `complete` iff every tracked sheet is checked. **Bending mirrors
+   this exactly, one level down**: `Orders.BendingCompletion` is indexed
+   to the flattened list of *output rows* (part+qty per sheet, not
+   per-sheet) from that same active plan version, resets together with
+   SheetCompletion for the same reason, and a given entry can only be
+   marked done once its *origin sheet's* SheetCompletion entry is true
+   (enforced server-side in `setBendingComplete`, not just hidden in the
+   UI). `BendingStatus` is `computeBendingStatus(completion, totalCount)`.
+7. **`completion[idx] = value` on a short/empty array creates real
+   sparse-array holes, and `Array.prototype.every` silently *skips*
+   holes instead of treating them as false** — so checking only the
+   *first* tracked item could flip a derived status to `complete` after
+   1 of 9, purely because the array happened to be short. Found live
+   while building Bending (out-of-order completion exposed it
+   immediately) and it affected Cutting's identical pattern too, just
+   never surfaced there because sheets had only ever been checked in
+   ascending order so far. Fixed by never trusting `completion.length`
+   or `.every()` — both `computeCuttingStatus`/`computeBendingStatus`
+   now walk every index up to the real known total (sheets.length /
+   `flattenPlanOutputs(sheets).length`, from the active version) and
+   treat any unset index as incomplete. If a third stage ever needs the
+   same per-item-checkbox pattern, reuse this shape, not a raw `.every()`
+   on the stored array.
+8. **Extra parts have three related but distinct concepts, easy to
    conflate**:
    - A **normal** output-row part (from `Models.PartsPerUnit`) — no
      size, always scoped to the PO's own model.
@@ -203,14 +249,14 @@ All four pages link to each other via a shared top nav.
      already typed). Backend: `listKnownExtraParts()` in
      `CuttingExtras.gs`, one entry per name (case-insensitive), not per
      name+size pair.
-8. **CORS**: the frontend is on a different origin than the Apps Script
+9. **CORS**: the frontend is on a different origin than the Apps Script
    API, so requests must stay "simple" to avoid a preflight OPTIONS
    request Apps Script doesn't handle. POSTs use
    `Content-Type: text/plain` with a JSON string body (parsed
    server-side via `JSON.parse(e.postData.contents)`); GETs use plain
    query-string params. Don't change `apiPost`/`apiGet` in `app.js` to
    send `application/json` — it will break in the browser.
-9. **PowerShell tool caveat** (session-specific, not app-specific):
+10. **PowerShell tool caveat** (session-specific, not app-specific):
    variables set in one `PowerShell` tool call do not persist to the
    next call — only cwd does. Inline literal values or do multi-step
    work in one combined command block. Also: printing a deeply nested
@@ -236,3 +282,10 @@ All four pages link to each other via a shared top nav.
   (e.g. using stocked extra parts against a new order isn't wired up).
 - Sheet stock / raw material tracking: not implemented in this rebuild
   (a pre-reset version had this; not recreated).
+- Bending has no extras-logging equivalent (no "extra bent part" concept
+  was asked for) and no plan editing of its own — it's a pure derived
+  view over Cutting's data. If a future stage (Assembly, Fitting, ...)
+  needs the same "unlocked by the previous stage" pattern, Bending.gs's
+  shape (flatten the source array once, gate completion on the prior
+  stage's completion array, derive status the same walked-index way) is
+  the template to copy, not Cutting's original per-sheet code.
