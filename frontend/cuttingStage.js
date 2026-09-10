@@ -748,7 +748,8 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
     var yieldInput = document.createElement('input');
     yieldInput.type = 'number';
     yieldInput.min = '1';
-    yieldInput.placeholder = 'Yield / sheet';
+    yieldInput.placeholder = 'pcs per sheet';
+    yieldInput.title = 'TOTAL pieces from one physical sheet (the whole count, not "extra")';
     yieldInput.style.width = '110px';
     yieldInput.value = output.yieldPerSheet !== undefined ? output.yieldPerSheet : '';
     yieldInput.addEventListener('input', function (e) {

@@ -629,7 +629,7 @@ function buildMultiYieldRow(sheetIndex, output, outputIndex) {
     var yieldInput = document.createElement('input');
     yieldInput.type = 'number';
     yieldInput.min = '1';
-    yieldInput.placeholder = 'Yield / sheet';
+    yieldInput.placeholder = 'pcs per sheet';
     yieldInput.style.width = '110px';
     yieldInput.value = output.yieldPerSheet;
     yieldInput.addEventListener('input', function (e) {
@@ -641,7 +641,7 @@ function buildMultiYieldRow(sheetIndex, output, outputIndex) {
     var hint = document.createElement('span');
     hint.className = 'section-hint';
     hint.style.margin = '0';
-    hint.textContent = 'pieces of this part off one physical sheet';
+    hint.textContent = 'TOTAL pieces from one physical sheet (the whole count, not "extra"). E.g. 4 → one sheet makes 4, covering 4 units.';
     box.appendChild(hint);
   }
 
