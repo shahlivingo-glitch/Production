@@ -1,5 +1,4 @@
 var pendingBendingOrders = [];
-var currentBendingOrder = null;
 var currentBendingQueue = null;
 
 function initBendingStage() {
@@ -71,22 +70,35 @@ function renderBendingDashboard() {
 }
 
 function openBendingOrder(poNumber) {
-  Promise.all([
-    apiGet('order', { poNumber: poNumber }),
-    apiGet('bendingQueueForOrder', { poNumber: poNumber })
-  ]).then(function (results) {
-    if (!results[0].ok) return showFatalError(results[0].error);
-    if (!results[1].ok) return showFatalError(results[1].error);
-    currentBendingOrder = results[0].data;
-    currentBendingQueue = results[1].data;
+  // Switch to the detail view immediately on click - previously nothing
+  // happened until both API calls resolved, which on a slow connection
+  // just looked like the app had hung. Now the view + spinner show right
+  // away and only the content underneath waits on the fetch.
+  el('dashboard-view').style.display = 'none';
+  el('detail-view').style.display = 'block';
+  el('detail-po-title').textContent = poNumber;
+  el('detail-status-pill').innerHTML = '';
+  el('detail-loading').style.display = 'flex';
+  el('detail-error').style.display = 'none';
+  el('detail-content').style.display = 'none';
 
-    el('dashboard-view').style.display = 'none';
-    el('detail-view').style.display = 'block';
-    el('detail-po-title').textContent = currentBendingOrder.poNumber;
+  apiGet('bendingQueueForOrder', { poNumber: poNumber }).then(function (result) {
+    el('detail-loading').style.display = 'none';
+    if (!result.ok) {
+      el('detail-error').textContent = 'Could not load ' + poNumber + ': ' + result.error;
+      el('detail-error').style.display = 'block';
+      return;
+    }
+    currentBendingQueue = result.data;
+    el('detail-content').style.display = 'block';
     renderBendingStatusPill();
     renderBendingPoSummary();
     renderBendingEntries();
-  }).catch(showFatalError);
+  }).catch(function (err) {
+    el('detail-loading').style.display = 'none';
+    el('detail-error').textContent = 'Could not load ' + poNumber + ': ' + (err && err.message ? err.message : err);
+    el('detail-error').style.display = 'block';
+  });
 }
 
 function renderBendingStatusPill() {
@@ -98,11 +110,11 @@ function renderBendingPoSummary() {
   var box = el('po-summary');
   box.innerHTML = '';
   var fields = [
-    ['Model', currentBendingOrder.modelName],
-    ['Qty', currentBendingOrder.qty],
-    ['Date', new Date(currentBendingOrder.createdAt).toLocaleString()],
-    ['Party', currentBendingOrder.partyName || '—'],
-    ['Cutting Status', currentBendingOrder.cuttingStatus]
+    ['Model', currentBendingQueue.modelName],
+    ['Qty', currentBendingQueue.qty],
+    ['Date', new Date(currentBendingQueue.createdAt).toLocaleString()],
+    ['Party', currentBendingQueue.partyName || '—'],
+    ['Cutting Status', currentBendingQueue.cuttingStatus]
   ];
   fields.forEach(function (f) {
     var block = document.createElement('div');
@@ -166,7 +178,7 @@ function buildBendingEntryCard(entry) {
 
 function toggleBendingEntry(entryIndex, completed) {
   apiPost('setBendingComplete', {
-    poNumber: currentBendingOrder.poNumber,
+    poNumber: currentBendingQueue.poNumber,
     entryIndex: entryIndex,
     completed: completed
   }).then(function (result) {
@@ -185,8 +197,8 @@ function toggleBendingEntry(entryIndex, completed) {
 }
 
 function markAllBendingComplete() {
-  if (!confirm('Mark every currently-available part for ' + currentBendingOrder.poNumber + ' as bent?')) return;
-  apiPost('markAllBendingComplete', { poNumber: currentBendingOrder.poNumber }).then(function (result) {
+  if (!confirm('Mark every currently-available part for ' + currentBendingQueue.poNumber + ' as bent?')) return;
+  apiPost('markAllBendingComplete', { poNumber: currentBendingQueue.poNumber }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     currentBendingQueue = result.data;
     renderBendingStatusPill();

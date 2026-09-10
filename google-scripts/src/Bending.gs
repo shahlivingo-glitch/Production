@@ -53,6 +53,9 @@ function getBendingQueueForOrder(poNumber) {
     poNumber: String(order.PoNumber),
     modelName: String(order.ModelName),
     qty: Number(order.Qty) || 0,
+    createdAt: order.CreatedAt,
+    partyName: order.PartyName || '',
+    cuttingStatus: order.CuttingStatus || 'pending',
     entries: entries,
     bendingStatus: order.BendingStatus || 'pending'
   };

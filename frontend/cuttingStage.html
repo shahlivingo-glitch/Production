@@ -43,47 +43,55 @@
     </div>
 
     <div class="cs-detail">
-      <div class="cs-po-summary" id="po-summary"></div>
-
-      <div class="cs-tabs">
-        <button class="cs-tab-btn selected" data-tab="plan">Cutting Plan</button>
-        <button class="cs-tab-btn" data-tab="history">Version History</button>
-        <button class="cs-tab-btn" data-tab="extras">Extras</button>
+      <div id="detail-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading PO…</p>
       </div>
+      <div id="detail-error" class="alert-banner" style="display:none;"></div>
 
-      <div class="cs-tab-panel" id="tab-plan">
-        <div class="save-bar" style="position:static;">
-          <span id="plan-version-label" style="font-weight:600;"></span>
-          <span class="save-status" id="plan-save-status"></span>
-          <span style="flex:1;"></span>
-          <button class="btn-secondary" id="add-sheet-btn">+ Add Sheet</button>
+      <div id="detail-content" style="display:none;">
+        <div class="cs-po-summary" id="po-summary"></div>
+
+        <div class="cs-tabs">
+          <button class="cs-tab-btn selected" data-tab="plan">Cutting Plan</button>
+          <button class="cs-tab-btn" data-tab="history">Version History</button>
+          <button class="cs-tab-btn" data-tab="extras">Extras</button>
         </div>
-        <div id="plan-sheets-body"></div>
-        <div class="field-row" style="margin-top:12px;">
-          <label>Version Note (optional)</label>
-          <input id="plan-version-note" placeholder="e.g. Used thinner sheet due to stock shortage">
-        </div>
-        <div class="section-hint">Saving creates a new version and resets every sheet's completion checkmark below (a new version means new sheets to cut).</div>
-        <button class="btn-primary btn-block" id="save-version-btn">Save as New Plan Version</button>
-      </div>
 
-      <div class="cs-tab-panel" id="tab-history" style="display:none;">
-        <div id="version-history-list"></div>
-      </div>
-
-      <div class="cs-tab-panel" id="tab-extras" style="display:none;">
-        <div class="cs-extra-forms">
-          <div class="cs-extra-form-card">
-            <div class="section-title">Log Extra Sheet Cut</div>
-            <div id="extra-sheet-form"></div>
+        <div class="cs-tab-panel" id="tab-plan">
+          <div class="save-bar" style="position:static;">
+            <span id="plan-version-label" style="font-weight:600;"></span>
+            <span class="save-status" id="plan-save-status"></span>
+            <span style="flex:1;"></span>
+            <button class="btn-secondary" id="add-sheet-btn">+ Add Sheet</button>
           </div>
-          <div class="cs-extra-form-card">
-            <div class="section-title">Log Extra Part from Existing Sheet</div>
-            <div id="extra-part-form"></div>
+          <div id="plan-sheets-body"></div>
+          <div class="field-row" style="margin-top:12px;">
+            <label>Version Note (optional)</label>
+            <input id="plan-version-note" placeholder="e.g. Used thinner sheet due to stock shortage">
           </div>
+          <div class="section-hint">Saving creates a new version and resets every sheet's completion checkmark below (a new version means new sheets to cut).</div>
+          <button class="btn-primary btn-block" id="save-version-btn">Save as New Plan Version</button>
         </div>
-        <div class="section-title" style="margin-top:18px;">Logged Extras</div>
-        <div id="extras-list"></div>
+
+        <div class="cs-tab-panel" id="tab-history" style="display:none;">
+          <div id="version-history-list"></div>
+        </div>
+
+        <div class="cs-tab-panel" id="tab-extras" style="display:none;">
+          <div class="cs-extra-forms">
+            <div class="cs-extra-form-card">
+              <div class="section-title">Log Extra Sheet Cut</div>
+              <div id="extra-sheet-form"></div>
+            </div>
+            <div class="cs-extra-form-card">
+              <div class="section-title">Log Extra Part from Existing Sheet</div>
+              <div id="extra-part-form"></div>
+            </div>
+          </div>
+          <div class="section-title" style="margin-top:18px;">Logged Extras</div>
+          <div id="extras-list"></div>
+        </div>
       </div>
     </div>
   </div>

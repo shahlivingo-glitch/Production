@@ -43,8 +43,15 @@
     </div>
 
     <div class="cs-detail">
-      <div class="cs-po-summary" id="po-summary"></div>
-      <div id="bending-entries-body"></div>
+      <div id="detail-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading PO…</p>
+      </div>
+      <div id="detail-error" class="alert-banner" style="display:none;"></div>
+      <div id="detail-content" style="display:none;">
+        <div class="cs-po-summary" id="po-summary"></div>
+        <div id="bending-entries-body"></div>
+      </div>
     </div>
   </div>
 

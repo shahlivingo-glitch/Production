@@ -252,6 +252,18 @@ function renderDashboard() {
 }
 
 function openOrder(poNumber) {
+  // Switch to the detail view immediately on click - previously nothing
+  // appeared until every one of the calls below had resolved, which on a
+  // slow connection just looked like the app had hung. Now the view +
+  // spinner show right away and only the content underneath waits.
+  el('dashboard-view').style.display = 'none';
+  el('detail-view').style.display = 'block';
+  el('detail-po-title').textContent = poNumber;
+  el('detail-status-pill').innerHTML = '';
+  el('detail-loading').style.display = 'flex';
+  el('detail-error').style.display = 'none';
+  el('detail-content').style.display = 'none';
+
   Promise.all([
     apiGet('order', { poNumber: poNumber }),
     apiPost('activePlanVersionForOrder', { poNumber: poNumber }),
@@ -281,15 +293,19 @@ function openOrder(poNumber) {
     });
   }).then(function () {
     if (!currentOrder) return;
-    el('dashboard-view').style.display = 'none';
-    el('detail-view').style.display = 'block';
+    el('detail-loading').style.display = 'none';
+    el('detail-content').style.display = 'block';
     el('detail-po-title').textContent = currentOrder.poNumber;
     renderStatusPill();
     renderPoSummary();
     selectTab('plan');
     renderPlanTab();
     renderExtrasTab();
-  }).catch(showFatalError);
+  }).catch(function (err) {
+    el('detail-loading').style.display = 'none';
+    el('detail-error').textContent = 'Could not load ' + poNumber + ': ' + (err && err.message ? err.message : err);
+    el('detail-error').style.display = 'block';
+  });
 }
 
 function renderStatusPill() {
