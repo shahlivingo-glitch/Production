@@ -90,9 +90,14 @@ after `runSetup`, not just that the API returns 200.
   versioning of its own, it just derives from Cutting's data.
 - **`frontend/extraPartInventory.html` — Extra Part Inventory.**
   Read-only table, auto-tallied running stock of extra/surplus parts
-  logged from Cutting Stage.
+  logged from Cutting Stage. Also called the "Leftover Ledger" — it now
+  also receives multi-yield overproduction (see Multi-yield below).
+- **`frontend/sheetStock.html` — Raw Sheet Stock.** On-hand count of raw
+  sheets per size (`W×H×T` only — no grade). Receive / correct stock;
+  view recent movements. Deducted automatically at cut time, never at PO
+  creation. May go negative (a short PO still gets created, just warns).
 
-All five pages link to each other via a shared top nav.
+All six pages link to each other via a shared top nav.
 
 ## Styling
 
@@ -112,10 +117,11 @@ animation library added; stays framework-free like the rest of the app.
 - `Models`: ModelName, PartsPerUnit (JSON `{partName: qtyPerUnit}` —
   **shared across every plan under that model**), UpdatedAt.
 - `CuttingPlans`: ModelName, PlanName, Sheets (JSON array of
-  `{width, height, thickness, outputs: [{partName, qty}]}` — one
-  physical sheet per unit; a plan's sheet **count** = sheets needed per
-  unit), UpdatedAt. A model always has at least one plan ("Plan 1",
-  auto-created with the model).
+  `{width, height, thickness, outputs: [{partName, qty, multiYield?,
+  yieldPerSheet?}]}` — one physical sheet per unit *unless* an output is
+  `multiYield` — see Multi-yield below; a plan's sheet **count** = sheets
+  needed per unit), UpdatedAt. A model always has at least one plan
+  ("Plan 1", auto-created with the model).
 - `Orders`: PoNumber (`PO-0001`, sequential, backend-assigned —
   `generatePoNumber()` scans existing rows for the max, no separate
   counter), ModelName, PlanName (the *named* plan picked at order
@@ -126,11 +132,17 @@ animation library added; stays framework-free like the rest of the app.
   version/plan is currently active), BendingCompletion (JSON array of
   booleans, one per *output row* across all sheets in flattened order —
   see `flattenPlanOutputs` in `Utils.gs` — not one per sheet), 
-  TotalSheetsRequired (snapshotted at creation), CuttingStatus
-  (`pending`/`complete`, **derived** from SheetCompletion), BendingStatus
-  (same, derived from BendingCompletion), CreatedAt. Both completion
-  arrays are positionally tied to the *active plan version's* sheets and
-  reset together whenever that version changes.
+  TotalSheetsRequired (snapshotted at creation, **informational only**
+  now — real per-size need comes from `computeOrderStockNeed`),
+  CuttingStatus (`pending`/`complete`, **derived** from SheetCompletion),
+  BendingStatus (same, derived from BendingCompletion), CreatedAt,
+  MultiYieldDecisions (JSON, see Multi-yield below), SheetStockConsumed
+  (JSON `{ "<sheetIndex>": true }` — set once a sheet-type is marked done
+  and its stock deduction + ledger posting have run; guards re-checks;
+  **not** reversed on uncheck). Both completion arrays plus
+  MultiYieldDecisions and SheetStockConsumed are positionally tied to the
+  *active plan version's* sheets and reset together whenever that version
+  changes.
 - `PlanVersions`: VersionId, ModelName, VersionNumber (per-model
   counter, 1-based), SourcePlanName, Sheets (same shape as
   CuttingPlans.Sheets), CreatedAt, Note. Only ever created by an
@@ -140,7 +152,39 @@ animation library added; stays framework-free like the rest of the app.
   Timestamp.
 - `ExtraPartInventory`: ModelName (or the literal string `Universal`),
   PartName, Size, Qty (running total, accumulates — never overwrites),
-  UpdatedAt. Auto-maintained from `CuttingExtras`, not directly edited.
+  UpdatedAt. Auto-maintained from `CuttingExtras` and from multi-yield
+  "extra full sheet" surplus, not directly edited.
+- `SheetStock`: Size (`"<w>x<h>x<t>"` canonical key from
+  `sheetSizeKey()`), Width, Height, Thickness, Qty (running on-hand, MAY
+  go negative), UpdatedAt.
+- `SheetStockLog`: LogId, Size, Delta (+recv / −consume), Reason
+  (`received` | `po-cut` | `extra-sheet-cut` | `adjustment`), PoNumber,
+  Timestamp, Note. Append-only.
+
+### Multi-yield (`MultiYield.gs`, mirrored client-side in `app.js` as
+`computeSheetPlanClient`)
+
+A plan output row flagged `multiYield` with `yieldPerSheet` means one
+physical cut of that sheet yields `yieldPerSheet` copies of the part
+(not just the per-unit `qty`). Per multi-yield row, for a PO of N units:
+`totalNeeded = N × qty`, `fullSheets = floor(totalNeeded / yieldPerSheet)`,
+`remainder = totalNeeded % yieldPerSheet`. When `remainder > 0` the PO
+carries a **decision** (`Orders.MultiYieldDecisions`, keyed
+`"<sheetIndex>:<outputIndex>"`): `extra-sheet` (cut one more full sheet;
+the `yieldPerSheet − remainder` surplus posts to the Leftover Ledger at
+cut time) or `scrap` (cut the exact `fullSheets`, operator logs the
+short pieces via the existing Extra Sheet Cut). Default `pending` —
+non-blocking at PO creation, badged on the Cutting dashboard, resolved
+from the PO's Cutting Plan tab (`setMultiYieldDecision`).
+
+Each multi-yield row is decided **independently**, even several on one
+sheet (locked with the user). The one physical tie-breaker: a
+sheet-type's raw-stock consumption = **max** across its rows of
+`fullSheets (+1 if extra-sheet)` / `N` for plain rows — you must cut at
+least as many physical sheets as the hungriest row needs. Stock deducts
+in `applyCutStockAndLedger` (called from `setSheetComplete` /
+`markAllSheetsComplete`), best-effort — a stock/ledger error never
+blocks the completion checkbox.
 
 ## Key design decisions / gotchas
 
@@ -256,7 +300,18 @@ animation library added; stays framework-free like the rest of the app.
    server-side via `JSON.parse(e.postData.contents)`); GETs use plain
    query-string params. Don't change `apiPost`/`apiGet` in `app.js` to
    send `application/json` — it will break in the browser.
-10. **PowerShell tool caveat** (session-specific, not app-specific):
+10. **Appending a column to a tab that already has data is safe;
+   reordering is not.** `rowsToObjects` maps by header *name*, and a
+   missing trailing cell reads as `undefined` (→ `parseJsonSafe(…, {})`).
+   `MultiYieldDecisions` / `SheetStockConsumed` were added to the *end*
+   of `TAB_HEADERS.Orders` for exactly this reason — no capture/repair
+   dance. Gotcha #2's dance is only for mid-array inserts/reorders.
+11. **`SheetService.gs` per-execution read cache** (`_sheetRowCache`):
+   `getAllRows` reads each tab once per request; writes
+   (`appendRow`/`writeRowUpdates`/`deleteRowsWhere`) invalidate that
+   tab. Fixed 30 s+ page loads from an N+1 read pattern. Fresh per web
+   request, so never stale across requests.
+12. **PowerShell tool caveat** (session-specific, not app-specific):
    variables set in one `PowerShell` tool call do not persist to the
    next call — only cwd does. Inline literal values or do multi-step
    work in one combined command block. Also: printing a deeply nested
@@ -278,10 +333,22 @@ animation library added; stays framework-free like the rest of the app.
   support delete. An abandoned or mistaken PO currently has to be
   cleaned up by hand in the Sheet.
 - `ExtraPartInventory` has no consumption/deduction flow — it only ever
-  accumulates from logged extras. Nothing currently draws it back down
-  (e.g. using stocked extra parts against a new order isn't wired up).
-- Sheet stock / raw material tracking: not implemented in this rebuild
-  (a pre-reset version had this; not recreated).
+  accumulates (from logged extras + multi-yield surplus). Nothing draws
+  it back down (using stocked extra parts against a new order isn't
+  wired up).
+- Raw-sheet stock (`SheetStock`) deducts at cut time and can go
+  negative; it is **not** reversed if a sheet is un-checked (matches the
+  extras prompt). Mistaken deductions are fixed via the Correction form
+  on the Raw Sheet Stock page. `applyCutStockAndLedger` is best-effort —
+  a failure there is swallowed so completion still records; there's no
+  retry/repair if a stock write silently fails.
+- Multi-yield decisions and stock deduction are keyed to the active
+  plan's sheet indices and reset on any version change — an in-progress
+  cut that changes version re-cuts (and re-deducts) from scratch, same
+  as SheetCompletion already did.
+- "Extra Sheet Cut" deducts 1 from `SheetStock` for whatever W×H×T the
+  operator types (0×0×0 if left blank → a junk stock row). No validation
+  that the size matches a real stocked size.
 - Bending has no extras-logging equivalent (no "extra bent part" concept
   was asked for) and no plan editing of its own — it's a pure derived
   view over Cutting's data. If a future stage (Assembly, Fitting, ...)

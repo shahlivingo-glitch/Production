@@ -239,7 +239,8 @@ function renderDashboard() {
     main.className = 'cs-po-card-main';
     main.innerHTML =
       '<div class="cs-po-number">' + po.poNumber + ' — ' + po.modelName + '</div>' +
-      '<div class="muted">Qty ' + po.qty + ' · ' + new Date(po.createdAt).toLocaleDateString() + (po.partyName ? ' · ' + po.partyName : '') + '</div>';
+      '<div class="muted">Qty ' + po.qty + ' · ' + new Date(po.createdAt).toLocaleDateString() + (po.partyName ? ' · ' + po.partyName : '') + '</div>' +
+      (po.hasPendingMultiYield ? '<div class="my-pending-chip">⚠ multi-yield decision pending</div>' : '');
 
     var sheets = document.createElement('div');
     sheets.className = 'cs-po-card-sheets';
@@ -324,6 +325,10 @@ function cloneSheets(sheets) {
         if (o.isExtra) {
           out.isExtra = true;
           out.size = o.size || '';
+        }
+        if (o.multiYield) {
+          out.multiYield = true;
+          out.yieldPerSheet = o.yieldPerSheet !== undefined ? o.yieldPerSheet : '';
         }
         return out;
       })
@@ -412,16 +417,29 @@ function renderPlanTab() {
     body.appendChild(empty);
   }
 
+  var plan = computeSheetPlanClient(workingSheets, currentOrder.qty, currentOrder.multiYieldDecisions || {});
   workingSheets.forEach(function (sheet, sheetIndex) {
-    body.appendChild(buildPlanSheetCard(sheet, sheetIndex));
+    body.appendChild(buildPlanSheetCard(sheet, sheetIndex, plan[sheetIndex]));
   });
+}
+
+function resolveMultiYieldDecision(key, choice) {
+  apiPost('setMultiYieldDecision', {
+    poNumber: currentOrder.poNumber,
+    key: key,
+    choice: choice
+  }).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    currentOrder = result.data;
+    renderPlanTab();
+  }).catch(showFatalError);
 }
 
 function isSheetComplete(sheetIndex) {
   return !!(currentOrder.sheetCompletion && currentOrder.sheetCompletion[sheetIndex]);
 }
 
-function buildPlanSheetCard(sheet, sheetIndex) {
+function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   var done = isSheetComplete(sheetIndex);
 
   var card = document.createElement('div');
@@ -465,13 +483,20 @@ function buildPlanSheetCard(sheet, sheetIndex) {
   card.appendChild(dims);
 
   var qty = currentOrder.qty;
+  var physical = sheetPlan ? sheetPlan.physicalSheets : qty;
   var totalLine = document.createElement('div');
   totalLine.className = 'cs-sheet-total-line';
-  totalLine.textContent = 'Sheets needed: 1 per unit × ' + qty + ' = ' + qty + ' total';
+  var hasMulti = sheetPlan && sheetPlan.rows.some(function (r) { return r.multiYield; });
+  totalLine.textContent = hasMulti
+    ? 'Physical sheets to cut for this PO: ' + physical
+    : 'Sheets needed: 1 per unit × ' + qty + ' = ' + qty + ' total';
   card.appendChild(totalLine);
 
   sheet.outputs.forEach(function (output, outputIndex) {
     card.appendChild(buildPlanOutputRow(sheetIndex, output, outputIndex));
+    if (sheetPlan && sheetPlan.rows[outputIndex] && sheetPlan.rows[outputIndex].multiYield) {
+      card.appendChild(buildMultiYieldGuidance(sheetIndex, sheetPlan.rows[outputIndex]));
+    }
   });
 
   var addOutputBtn = document.createElement('button');
@@ -481,6 +506,54 @@ function buildPlanSheetCard(sheet, sheetIndex) {
   card.appendChild(addOutputBtn);
 
   return card;
+}
+
+function buildMultiYieldGuidance(sheetIndex, r) {
+  var wrap = document.createElement('div');
+  wrap.className = 'my-guidance';
+
+  var math = r.partName + ' — multi-yield ' + r.yieldPerSheet + '/sheet · need ' + r.totalNeeded +
+    ' → ' + r.fullSheets + ' full sheet' + (r.fullSheets === 1 ? '' : 's');
+  math += r.remainder > 0 ? (', ' + r.remainder + ' short') : ' (exact)';
+  var mathEl = document.createElement('div');
+  mathEl.textContent = math;
+  wrap.appendChild(mathEl);
+
+  if (r.remainder > 0) {
+    var key = sheetIndex + ':' + r.outputIndex;
+    var note = document.createElement('div');
+    if (r.choice === 'extra-sheet') {
+      note.textContent = '→ Cut ' + (r.fullSheets + 1) + ' sheets (1 extra full). ' +
+        r.surplus + ' surplus ' + r.partName + ' post to the Leftover Ledger when this sheet is marked done.';
+      wrap.appendChild(note);
+    } else if (r.choice === 'scrap') {
+      note.textContent = '→ Cut ' + r.fullSheets + ' sheets, then log the ' + r.remainder + ' short ' +
+        r.partName + ' via "Log Extra Sheet Cut" on the Extras tab.';
+      wrap.appendChild(note);
+    } else {
+      var decision = document.createElement('div');
+      decision.className = 'my-decision';
+      var p = document.createElement('p');
+      p.textContent = 'Decision needed: ' + r.remainder + ' ' + r.partName +
+        ' short of a full sheet.';
+      decision.appendChild(p);
+      var btns = document.createElement('div');
+      btns.className = 'my-decision-btns';
+      var b1 = document.createElement('button');
+      b1.className = 'btn-primary';
+      b1.textContent = 'Cut 1 extra full sheet';
+      b1.addEventListener('click', function () { resolveMultiYieldDecision(key, 'extra-sheet'); });
+      var b2 = document.createElement('button');
+      b2.className = 'btn-secondary';
+      b2.textContent = 'Cut ' + r.remainder + ' pcs on scrap';
+      b2.addEventListener('click', function () { resolveMultiYieldDecision(key, 'scrap'); });
+      btns.appendChild(b1);
+      btns.appendChild(b2);
+      decision.appendChild(btns);
+      wrap.appendChild(decision);
+    }
+  }
+  return wrap;
 }
 
 function buildPlanDimField(labelText, value, onChange) {
@@ -655,7 +728,40 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
   row.appendChild(qtyInput);
   row.appendChild(totalSpan);
   row.appendChild(removeBtn);
-  return row;
+
+  var myRow = document.createElement('div');
+  myRow.className = 'multi-yield-row';
+  var myLabel = document.createElement('label');
+  myLabel.className = 'multi-yield-toggle';
+  var myCb = document.createElement('input');
+  myCb.type = 'checkbox';
+  myCb.checked = !!output.multiYield;
+  myCb.addEventListener('change', function (e) {
+    workingSheets[sheetIndex].outputs[outputIndex].multiYield = e.target.checked;
+    markDirty();
+    renderPlanTab();
+  });
+  myLabel.appendChild(myCb);
+  myLabel.appendChild(document.createTextNode(' Multi-yield (one sheet cuts many)'));
+  myRow.appendChild(myLabel);
+  if (output.multiYield) {
+    var yieldInput = document.createElement('input');
+    yieldInput.type = 'number';
+    yieldInput.min = '1';
+    yieldInput.placeholder = 'Yield / sheet';
+    yieldInput.style.width = '110px';
+    yieldInput.value = output.yieldPerSheet !== undefined ? output.yieldPerSheet : '';
+    yieldInput.addEventListener('input', function (e) {
+      workingSheets[sheetIndex].outputs[outputIndex].yieldPerSheet = e.target.value;
+    });
+    yieldInput.addEventListener('change', function () { markDirty(); renderPlanTab(); });
+    myRow.appendChild(yieldInput);
+  }
+
+  var container = document.createElement('div');
+  container.appendChild(row);
+  container.appendChild(myRow);
+  return container;
 }
 
 function updateOutputTotal(span, qtyPerSheet) {
@@ -699,6 +805,10 @@ function saveNewVersion() {
         if (o.isExtra) {
           out.isExtra = true;
           out.size = o.size || '';
+        }
+        if (o.multiYield && Number(o.yieldPerSheet) >= 1) {
+          out.multiYield = true;
+          out.yieldPerSheet = Number(o.yieldPerSheet);
         }
         return out;
       })

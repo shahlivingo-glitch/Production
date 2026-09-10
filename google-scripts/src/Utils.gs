@@ -29,13 +29,16 @@ function padNumber(n, width) {
 function flattenPlanOutputs(sheets) {
   var entries = [];
   (sheets || []).forEach(function (sheet, sheetIndex) {
-    (sheet.outputs || []).forEach(function (output) {
+    (sheet.outputs || []).forEach(function (output, outputIndex) {
       entries.push({
         sheetIndex: sheetIndex,
+        outputIndex: outputIndex,
         partName: output.partName,
         qty: Number(output.qty) || 0,
         isExtra: !!output.isExtra,
-        size: output.size || ''
+        size: output.size || '',
+        multiYield: !!output.multiYield,
+        yieldPerSheet: Number(output.yieldPerSheet) || 0
       });
     });
   });

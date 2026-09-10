@@ -49,6 +49,15 @@ function addCuttingExtra(payload) {
     Object.keys(partsProduced).forEach(function (partName) {
       addToExtraPartInventory(order.ModelName, partName, '', Number(partsProduced[partName]) || 0);
     });
+    // one scrap/extra sheet was physically consumed
+    try {
+      applySheetStockDelta(
+        details.width, details.height, details.thickness,
+        -1, 'extra-sheet-cut', payload.poNumber, 'Extra Sheet Cut'
+      );
+    } catch (err) {
+      // best-effort: never block logging the extra
+    }
   } else {
     var inventoryModel = order.ModelName;
     if (details.isExtra) {

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Raw Sheet Stock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>Raw Sheet Stock</h1>
+    <nav class="topbar-nav">
+      <a href="index.html">Cutting Configuration</a>
+      <a href="orders.html">Production Order Form</a>
+      <a href="cuttingStage.html">Cutting Stage</a>
+      <a href="bendingStage.html">Bending Stage</a>
+      <a href="extraPartInventory.html">Extra Part Inventory</a>
+    </nav>
+  </div>
+
+  <div class="po-layout">
+    <div class="column" style="flex:0 0 320px;">
+      <h2>Receive / Correct Stock</h2>
+      <div class="section-hint">Sheets are tracked by size only (W&times;H&times;T). Deducted automatically as cutting is marked done. May go negative.</div>
+      <div class="field-row">
+        <label>Width (mm)</label>
+        <input type="number" id="ss-width" min="0">
+      </div>
+      <div class="field-row">
+        <label>Height (mm)</label>
+        <input type="number" id="ss-height" min="0">
+      </div>
+      <div class="field-row">
+        <label>Thickness (mm)</label>
+        <input type="number" id="ss-thickness" min="0" step="0.1">
+      </div>
+      <div class="field-row">
+        <label>Qty</label>
+        <input type="number" id="ss-qty">
+      </div>
+      <div class="field-row">
+        <label>Note (optional)</label>
+        <input id="ss-note" placeholder="e.g. GRN #123, stock count">
+      </div>
+      <button class="btn-primary btn-block" id="ss-receive-btn" style="margin-bottom:8px;">Receive (add stock)</button>
+      <button class="btn-secondary btn-block" id="ss-adjust-btn">Correction (+/- any amount)</button>
+      <div id="ss-form-status" class="save-status" style="display:block; margin-top:8px;"></div>
+    </div>
+
+    <div class="column" style="flex:1; min-width:340px;">
+      <h2>On Hand</h2>
+      <div id="stock-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading Raw Sheet Stock&hellip;</p>
+      </div>
+      <div id="stock-error" class="alert-banner" style="display:none;"></div>
+      <div id="stock-table-wrap" style="overflow-x:auto; display:none;">
+        <table class="po-table">
+          <thead>
+            <tr><th>Size (W&times;H&times;T)</th><th>Qty</th><th>Updated</th></tr>
+          </thead>
+          <tbody id="stock-table-body"></tbody>
+        </table>
+      </div>
+      <div id="stock-empty" class="empty-state" style="display:none;">No sheet stock recorded yet.</div>
+
+      <div class="section-title">Recent Movements</div>
+      <div id="log-table-wrap" style="overflow-x:auto;">
+        <table class="po-table">
+          <thead>
+            <tr><th>When</th><th>Size</th><th>Change</th><th>Reason</th><th>PO</th><th>Note</th></tr>
+          </thead>
+          <tbody id="log-table-body"></tbody>
+        </table>
+      </div>
+      <div id="log-empty" class="empty-state" style="display:none;">No movements yet.</div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="sheetStock.js"></script>
+</body>
+</html>

@@ -240,7 +240,12 @@ function selectPlan(planName) {
           height: s.height !== undefined ? s.height : '',
           thickness: s.thickness !== undefined ? s.thickness : '',
           outputs: (s.outputs || []).map(function (o) {
-            return { partName: o.partName || '', qty: o.qty !== undefined ? o.qty : '' };
+            return {
+              partName: o.partName || '',
+              qty: o.qty !== undefined ? o.qty : '',
+              multiYield: !!o.multiYield,
+              yieldPerSheet: o.yieldPerSheet !== undefined && o.yieldPerSheet !== 0 ? o.yieldPerSheet : ''
+            };
           })
         };
       })
@@ -300,7 +305,12 @@ function saveModel() {
       height: Number(s.height) || 0,
       thickness: Number(s.thickness) || 0,
       outputs: s.outputs.map(function (o) {
-        return { partName: o.partName, qty: Number(o.qty) || 0 };
+        var out = { partName: o.partName, qty: Number(o.qty) || 0 };
+        if (o.multiYield && Number(o.yieldPerSheet) >= 1) {
+          out.multiYield = true;
+          out.yieldPerSheet = Number(o.yieldPerSheet);
+        }
+        return out;
       })
     };
   });
@@ -589,7 +599,53 @@ function buildOutputRow(sheet, sheetIndex, output, outputIndex) {
   row.appendChild(select);
   row.appendChild(qtyInput);
   row.appendChild(removeBtn);
-  return row;
+
+  var myRow = buildMultiYieldRow(sheetIndex, output, outputIndex);
+  var wrap = document.createElement('div');
+  wrap.appendChild(row);
+  wrap.appendChild(myRow);
+  return wrap;
+}
+
+function buildMultiYieldRow(sheetIndex, output, outputIndex) {
+  var box = document.createElement('div');
+  box.className = 'multi-yield-row';
+
+  var label = document.createElement('label');
+  label.className = 'multi-yield-toggle';
+  var cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!output.multiYield;
+  cb.addEventListener('change', function (e) {
+    configState.sheets[sheetIndex].outputs[outputIndex].multiYield = e.target.checked;
+    markDirty();
+    renderSheetsColumn();
+  });
+  label.appendChild(cb);
+  label.appendChild(document.createTextNode(' Multi-yield (one sheet cuts many)'));
+  box.appendChild(label);
+
+  if (output.multiYield) {
+    var yieldInput = document.createElement('input');
+    yieldInput.type = 'number';
+    yieldInput.min = '1';
+    yieldInput.placeholder = 'Yield / sheet';
+    yieldInput.style.width = '110px';
+    yieldInput.value = output.yieldPerSheet;
+    yieldInput.addEventListener('input', function (e) {
+      configState.sheets[sheetIndex].outputs[outputIndex].yieldPerSheet = e.target.value;
+    });
+    yieldInput.addEventListener('change', function () { markDirty(); });
+    box.appendChild(yieldInput);
+
+    var hint = document.createElement('span');
+    hint.className = 'section-hint';
+    hint.style.margin = '0';
+    hint.textContent = 'pieces of this part off one physical sheet';
+    box.appendChild(hint);
+  }
+
+  return box;
 }
 
 function addSheet() {

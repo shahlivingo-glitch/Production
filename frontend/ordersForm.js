@@ -2,11 +2,23 @@ var models = [];
 var plans = [];
 var selectedModelSheets = null;
 var allOrders = [];
+var sheetStockMap = {};
+var multiYieldChoices = {};
 
 function initOrdersForm() {
   loadModels();
   loadOrders();
+  loadSheetStockForForm();
   startNewDraft();
+}
+
+function loadSheetStockForForm() {
+  apiGet('sheetStock', {}).then(function (result) {
+    if (!result.ok) return;
+    sheetStockMap = {};
+    result.data.forEach(function (r) { sheetStockMap[r.size] = r.qty; });
+    renderSheetsRequired();
+  }).catch(function () {});
 }
 
 function loadOrders() {
@@ -71,6 +83,7 @@ function startNewDraft() {
   el('po-plan-row').style.display = 'none';
   plans = [];
   selectedModelSheets = null;
+  multiYieldChoices = {};
   renderSheetsRequired();
 
   apiGet('previewNextPoNumber', {}).then(function (result) {
@@ -139,6 +152,7 @@ function onPlanChange() {
 
 function loadSheetsForPlan(modelName, planName) {
   selectedModelSheets = undefined;
+  multiYieldChoices = {};
   renderSheetsRequired();
   apiGet('cuttingConfigPlan', { modelName: modelName, planName: planName }).then(function (result) {
     if (el('po-model').value !== modelName || el('po-plan').value !== planName) return;
@@ -212,6 +226,8 @@ function renderSheetsRequired() {
     return;
   }
 
+  var plan = computeSheetPlanClient(selectedModelSheets, qty, multiYieldChoices);
+
   var box = document.createElement('div');
   box.className = 'sheets-required-box';
 
@@ -220,31 +236,140 @@ function renderSheetsRequired() {
   title.textContent = 'Sheets Required';
   box.appendChild(title);
 
-  var table = document.createElement('table');
-  table.className = 'sheets-required-table';
-
-  var thead = document.createElement('thead');
-  thead.innerHTML = '<tr><th>Sheet</th><th>Per Unit</th><th>× Qty</th><th>Total</th></tr>';
-  table.appendChild(thead);
-
-  var tbody = document.createElement('tbody');
   var grandTotal = 0;
-  selectedModelSheets.forEach(function (sheet, index) {
-    var lineTotal = 1 * qty;
-    grandTotal += lineTotal;
-    var tr = document.createElement('tr');
-    tr.innerHTML = '<td>' + sheetLabel(sheet, index) + '</td><td>1</td><td>' + qty + '</td><td>' + lineTotal + '</td>';
-    tbody.appendChild(tr);
+  plan.forEach(function (sheetPlan, index) {
+    grandTotal += sheetPlan.physicalSheets;
+
+    var line = document.createElement('div');
+    line.style.display = 'flex';
+    line.style.justifyContent = 'space-between';
+    line.style.fontSize = '13px';
+    line.style.padding = '4px 0';
+    line.innerHTML = '<span>' + sheetLabel(selectedModelSheets[index], index) + '</span>' +
+      '<span><strong>' + sheetPlan.physicalSheets + '</strong> sheet' + (sheetPlan.physicalSheets === 1 ? '' : 's') + '</span>';
+    box.appendChild(line);
+
+    sheetPlan.rows.forEach(function (r) {
+      if (!r.multiYield) return;
+      box.appendChild(buildMultiYieldSubline(index, r));
+    });
   });
 
-  var totalRow = document.createElement('tr');
-  totalRow.className = 'total-row';
-  totalRow.innerHTML = '<td>Grand Total</td><td></td><td></td><td>' + grandTotal + '</td>';
-  tbody.appendChild(totalRow);
+  var totalLine = document.createElement('div');
+  totalLine.style.display = 'flex';
+  totalLine.style.justifyContent = 'space-between';
+  totalLine.style.fontWeight = '700';
+  totalLine.style.borderTop = '2px solid var(--color-border-strong)';
+  totalLine.style.marginTop = '6px';
+  totalLine.style.paddingTop = '6px';
+  totalLine.innerHTML = '<span>Total sheets to cut</span><span>' + grandTotal + '</span>';
+  box.appendChild(totalLine);
 
-  table.appendChild(tbody);
-  box.appendChild(table);
   section.appendChild(box);
+  section.appendChild(buildStockCheck(plan));
+}
+
+function buildMultiYieldSubline(sheetIndex, r) {
+  var wrap = document.createElement('div');
+  wrap.className = 'my-guidance';
+
+  var math = r.partName + ' — need ' + r.totalNeeded + ', 1 sheet yields ' + r.yieldPerSheet +
+    ' → ' + r.fullSheets + ' full sheet' + (r.fullSheets === 1 ? '' : 's') +
+    ' (' + (r.fullSheets * r.yieldPerSheet) + ' pcs)';
+  if (r.remainder > 0) {
+    math += ', ' + r.remainder + ' short';
+  } else {
+    math += ' — exact';
+  }
+  var mathEl = document.createElement('div');
+  mathEl.textContent = math;
+  wrap.appendChild(mathEl);
+
+  if (r.remainder > 0) {
+    var key = sheetIndex + ':' + r.outputIndex;
+    var decision = document.createElement('div');
+    decision.className = 'my-decision';
+
+    var p = document.createElement('p');
+    p.textContent = multiYieldChoices[key]
+      ? (multiYieldChoices[key] === 'extra-sheet'
+          ? 'Chosen: cut 1 extra full sheet (' + (r.yieldPerSheet - r.remainder) + ' surplus → Leftover Ledger).'
+          : 'Chosen: cut ' + r.remainder + ' pcs on a scrap sheet (log via Extra Sheet Cut in Cutting Stage).')
+      : 'Decide (optional — can be set later in Cutting Stage):';
+    decision.appendChild(p);
+
+    var btns = document.createElement('div');
+    btns.className = 'my-decision-btns';
+    btns.appendChild(makeChoiceBtn(key, 'extra-sheet', 'Cut 1 extra full sheet'));
+    btns.appendChild(makeChoiceBtn(key, 'scrap', 'Cut ' + r.remainder + ' pcs on scrap'));
+    if (multiYieldChoices[key]) {
+      var clear = document.createElement('button');
+      clear.className = 'btn-secondary';
+      clear.textContent = 'Clear';
+      clear.addEventListener('click', function () {
+        delete multiYieldChoices[key];
+        renderSheetsRequired();
+      });
+      btns.appendChild(clear);
+    }
+    decision.appendChild(btns);
+    wrap.appendChild(decision);
+  }
+
+  return wrap;
+}
+
+function makeChoiceBtn(key, choice, label) {
+  var btn = document.createElement('button');
+  btn.className = multiYieldChoices[key] === choice ? 'btn-primary' : 'btn-secondary';
+  btn.textContent = label;
+  btn.addEventListener('click', function () {
+    multiYieldChoices[key] = choice;
+    renderSheetsRequired();
+  });
+  return btn;
+}
+
+function buildStockCheck(plan) {
+  var box = document.createElement('div');
+  box.className = 'sheets-required-box';
+
+  var title = document.createElement('div');
+  title.className = 'section-title';
+  title.textContent = 'Raw Sheet Stock';
+  box.appendChild(title);
+
+  var need = {};
+  plan.forEach(function (s) { need[s.sizeKey] = (need[s.sizeKey] || 0) + s.physicalSheets; });
+
+  var anyShort = false;
+  Object.keys(need).forEach(function (sizeKey) {
+    var onHand = Number(sheetStockMap[sizeKey]) || 0;
+    var short = need[sizeKey] - onHand;
+    var line = document.createElement('div');
+    line.style.display = 'flex';
+    line.style.justifyContent = 'space-between';
+    line.style.fontSize = '13px';
+    line.style.padding = '4px 0';
+    var right = 'need ' + need[sizeKey] + ', ' + onHand + ' in stock';
+    if (short > 0) {
+      anyShort = true;
+      right += ' — <span class="stock-warn">' + short + ' short</span>';
+    }
+    line.innerHTML = '<span>' + sizeKey.replace(/x/g, ' × ') + '</span><span>' + right + '</span>';
+    box.appendChild(line);
+  });
+
+  if (anyShort) {
+    var warn = document.createElement('div');
+    warn.className = 'alert-banner';
+    warn.style.marginTop = '8px';
+    warn.style.marginBottom = '0';
+    warn.textContent = 'Some sizes are short on stock. The PO can still be created — stock will show a deficit until more is received.';
+    box.appendChild(warn);
+  }
+
+  return box;
 }
 
 function createPO() {
@@ -288,12 +413,18 @@ function createPO() {
     dxfRefNo: el('po-dxf').value,
     colourPlan: el('po-colour').value,
     deliveryDeadline: el('po-deadline').value,
-    partyName: el('po-party').value
+    partyName: el('po-party').value,
+    multiYieldDecisions: multiYieldChoices
   }).then(function (result) {
     createBtn.disabled = false;
     if (!result.ok) return showFatalError(result.error);
-    alert(result.data.poNumber + ' created — ' + result.data.totalSheetsRequired + ' sheets required.');
+    var msg = result.data.poNumber + ' created.';
+    if (result.data.hasPendingMultiYield) {
+      msg += '\n\nOne or more multi-yield remainder decisions are still pending — resolve them in Cutting Stage before cutting.';
+    }
+    alert(msg);
     loadOrders();
+    loadSheetStockForForm();
     startNewDraft();
   }).catch(function (err) {
     createBtn.disabled = false;

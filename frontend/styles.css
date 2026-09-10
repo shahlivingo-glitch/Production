@@ -474,6 +474,61 @@ a { color: var(--color-accent); }
   font-variant-numeric: tabular-nums;
 }
 
+/* Multi-yield toggle under an output row */
+.multi-yield-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-3) var(--space-4);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--color-border);
+}
+.multi-yield-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+}
+.multi-yield-row input[type="number"] { font-variant-numeric: tabular-nums; }
+
+/* Multi-yield guidance / decision block in Cutting Stage + PO form */
+.my-guidance {
+  font-size: 12.5px;
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin: var(--space-2) 0;
+  color: var(--color-foreground);
+}
+.my-decision {
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  margin: var(--space-2) 0;
+}
+.my-decision p { margin: 0 0 var(--space-2); font-size: 12.5px; color: var(--color-warning-text); }
+.my-decision-btns { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.my-decision-btns button { font-size: 12px; padding: 6px 10px; }
+.my-pending-chip {
+  display: inline-block;
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 9px;
+  margin-top: 4px;
+}
+.stock-warn {
+  color: var(--color-destructive);
+  font-weight: 600;
+}
+
 .sheet-dims { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-3); flex-wrap: wrap; }
 .sheet-dims input { width: 82px; font-variant-numeric: tabular-nums; }
 .sheet-dims-label { font-size: 12px; color: var(--color-subtle-foreground); margin-right: 2px; }

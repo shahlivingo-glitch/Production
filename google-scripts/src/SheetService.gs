@@ -1,10 +1,12 @@
 var TAB_HEADERS = {
   Models: ['ModelName', 'PartsPerUnit', 'UpdatedAt'],
   CuttingPlans: ['ModelName', 'PlanName', 'Sheets', 'UpdatedAt'],
-  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'BendingCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'BendingStatus', 'CreatedAt'],
+  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'BendingCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'BendingStatus', 'CreatedAt', 'MultiYieldDecisions', 'SheetStockConsumed'],
   PlanVersions: ['VersionId', 'ModelName', 'VersionNumber', 'SourcePlanName', 'Sheets', 'CreatedAt', 'Note'],
   CuttingExtras: ['ExtraId', 'PoNumber', 'Type', 'Details', 'Timestamp'],
-  ExtraPartInventory: ['ModelName', 'PartName', 'Size', 'Qty', 'UpdatedAt']
+  ExtraPartInventory: ['ModelName', 'PartName', 'Size', 'Qty', 'UpdatedAt'],
+  SheetStock: ['Size', 'Width', 'Height', 'Thickness', 'Qty', 'UpdatedAt'],
+  SheetStockLog: ['LogId', 'Size', 'Delta', 'Reason', 'PoNumber', 'Timestamp', 'Note']
 };
 
 function getSheet(tabName) {

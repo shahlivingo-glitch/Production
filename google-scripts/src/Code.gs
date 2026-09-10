@@ -18,6 +18,8 @@ var GET_ACTIONS = {
   knownExtraParts: function (p) { return listKnownExtraParts(); },
   pendingBendingOrders: function (p) { return listPendingBendingOrders(); },
   bendingQueueForOrder: function (p) { return getBendingQueueForOrder(p.poNumber); },
+  sheetStock: function (p) { return listSheetStock(); },
+  sheetStockLog: function (p) { return listSheetStockLog(p.limit); },
   runSetup: function (p) {
     setupSpreadsheet();
     return { ran: true };
@@ -40,7 +42,10 @@ var POST_ACTIONS = {
   setActivePlanVersionForOrder: function (b) { return setActivePlanVersionForOrder(b); },
   addCuttingExtra: function (b) { return addCuttingExtra(b); },
   setBendingComplete: function (b) { return setBendingComplete(b); },
-  markAllBendingComplete: function (b) { return markAllBendingComplete(b); }
+  markAllBendingComplete: function (b) { return markAllBendingComplete(b); },
+  setMultiYieldDecision: function (b) { return setMultiYieldDecision(b); },
+  receiveSheetStock: function (b) { return receiveSheetStock(b); },
+  adjustSheetStock: function (b) { return adjustSheetStock(b); }
 };
 
 function doGet(e) {
