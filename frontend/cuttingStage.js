@@ -483,21 +483,21 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   card.appendChild(dims);
 
   var qty = currentOrder.qty;
-  var physical = sheetPlan ? sheetPlan.physicalSheets : qty;
   var totalLine = document.createElement('div');
   totalLine.className = 'cs-sheet-total-line';
-  var hasMulti = sheetPlan && sheetPlan.rows.some(function (r) { return r.multiYield; });
-  totalLine.textContent = hasMulti
-    ? 'Physical sheets to cut for this PO: ' + physical
+  var anyMulti = sheetPlan && sheetPlan.rows.some(function (r) { return r.multiYield; });
+  totalLine.textContent = (sheetPlan && anyMulti)
+    ? 'Physical sheets to cut for this PO: ' + sheetPlan.physicalSheets
     : 'Sheets needed: 1 per unit × ' + qty + ' = ' + qty + ' total';
   card.appendChild(totalLine);
 
   sheet.outputs.forEach(function (output, outputIndex) {
     card.appendChild(buildPlanOutputRow(sheetIndex, output, outputIndex));
-    if (sheetPlan && sheetPlan.rows[outputIndex] && sheetPlan.rows[outputIndex].multiYield) {
-      card.appendChild(buildMultiYieldGuidance(sheetIndex, sheetPlan.rows[outputIndex]));
-    }
   });
+
+  if (sheetPlan && (anyMulti || sheetPlan.decisionKey)) {
+    card.appendChild(buildMultiYieldGuidance(sheetPlan));
+  }
 
   var addOutputBtn = document.createElement('button');
   addOutputBtn.className = 'btn-secondary';
@@ -508,34 +508,39 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   return card;
 }
 
-function buildMultiYieldGuidance(sheetIndex, r) {
+function buildMultiYieldGuidance(sheetPlan) {
   var wrap = document.createElement('div');
   wrap.className = 'my-guidance';
 
-  var math = r.partName + ' — multi-yield ' + r.yieldPerSheet + '/sheet · need ' + r.totalNeeded +
-    ' → ' + r.fullSheets + ' full sheet' + (r.fullSheets === 1 ? '' : 's');
-  math += r.remainder > 0 ? (', ' + r.remainder + ' short') : ' (exact)';
-  var mathEl = document.createElement('div');
-  mathEl.textContent = math;
-  wrap.appendChild(mathEl);
+  sheetPlan.rows.forEach(function (r) {
+    var l = document.createElement('div');
+    var txt = r.partName + ' — need ' + r.totalNeeded + ', ' + sheetPlan.physicalSheets +
+      ' × ' + r.yieldPerSheet + '/sheet = ' + r.produced;
+    if (r.surplus > 0) txt += ' (' + r.surplus + ' surplus → Leftover Ledger on mark-done)';
+    else if (r.shortOnScrap > 0) txt += ' — ' + r.shortOnScrap + ' to cut on scrap';
+    else txt += ' (exact)';
+    if (r.isBinding) txt += '  ← drives the count';
+    l.textContent = txt;
+    wrap.appendChild(l);
+  });
 
-  if (r.remainder > 0) {
-    var key = sheetIndex + ':' + r.outputIndex;
-    var note = document.createElement('div');
-    if (r.choice === 'extra-sheet') {
-      note.textContent = '→ Cut ' + (r.fullSheets + 1) + ' sheets (1 extra full). ' +
-        r.surplus + ' surplus ' + r.partName + ' post to the Leftover Ledger when this sheet is marked done.';
-      wrap.appendChild(note);
-    } else if (r.choice === 'scrap') {
-      note.textContent = '→ Cut ' + r.fullSheets + ' sheets, then log the ' + r.remainder + ' short ' +
-        r.partName + ' via "Log Extra Sheet Cut" on the Extras tab.';
-      wrap.appendChild(note);
+  if (sheetPlan.decisionKey) {
+    var key = sheetPlan.decisionKey;
+    var rem = sheetPlan.bindingRemainder;
+    if (sheetPlan.choice === 'extra-sheet') {
+      var d1 = document.createElement('div');
+      d1.textContent = '→ Decided: cut ' + sheetPlan.physicalSheets + ' sheets (1 extra full).';
+      wrap.appendChild(d1);
+    } else if (sheetPlan.choice === 'scrap') {
+      var d2 = document.createElement('div');
+      d2.textContent = '→ Decided: cut ' + sheetPlan.baseSheets + ' sheets, then log the ' + rem +
+        ' short pcs via "Log Extra Sheet Cut" on the Extras tab.';
+      wrap.appendChild(d2);
     } else {
       var decision = document.createElement('div');
       decision.className = 'my-decision';
       var p = document.createElement('p');
-      p.textContent = 'Decision needed: ' + r.remainder + ' ' + r.partName +
-        ' short of a full sheet.';
+      p.textContent = 'Decision needed: driving part is ' + rem + ' short of a full sheet.';
       decision.appendChild(p);
       var btns = document.createElement('div');
       btns.className = 'my-decision-btns';
@@ -545,7 +550,7 @@ function buildMultiYieldGuidance(sheetIndex, r) {
       b1.addEventListener('click', function () { resolveMultiYieldDecision(key, 'extra-sheet'); });
       var b2 = document.createElement('button');
       b2.className = 'btn-secondary';
-      b2.textContent = 'Cut ' + r.remainder + ' pcs on scrap';
+      b2.textContent = 'Cut ' + rem + ' pcs on scrap';
       b2.addEventListener('click', function () { resolveMultiYieldDecision(key, 'scrap'); });
       btns.appendChild(b1);
       btns.appendChild(b2);

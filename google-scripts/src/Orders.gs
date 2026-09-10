@@ -100,8 +100,11 @@ function createOrder(payload) {
     throw new Error('Plan not found: ' + modelName + ' / ' + planName);
   }
   var sheets = parseJsonSafe(plan.Sheets, []);
-  var totalSheetsRequired = sheets.length * qty;
   var multiYieldDecisions = buildMultiYieldDecisions(sheets, qty, payload.multiYieldDecisions || {});
+  var totalSheetsRequired = 0;
+  computeOrderSheetPlan(sheets, qty, multiYieldDecisions).forEach(function (s) {
+    totalSheetsRequired += s.physicalSheets;
+  });
 
   var poNumber = generatePoNumber();
   appendRow('Orders', {
@@ -128,10 +131,12 @@ function createOrder(payload) {
 }
 
 // When a sheet-type is first marked done: deduct its physical sheet count from
-// raw stock and post any "extra full sheet" surplus to the Leftover Ledger
-// (ExtraPartInventory). Runs once per sheet-type - SheetStockConsumed guards
-// re-checks. Not reversed on uncheck (matches the existing mark-done extras
-// prompt). Best-effort: a stock/ledger failure must never block the checkbox.
+// raw stock and post EVERY overproduced row's surplus to the Leftover Ledger
+// (ExtraPartInventory) - in the shared-sheet model, cutting for the binding
+// part overproduces every other part on that sheet. Runs once per sheet-type -
+// SheetStockConsumed guards re-checks. Not reversed on uncheck (matches the
+// existing mark-done extras prompt). Best-effort: a stock/ledger failure must
+// never block the checkbox.
 function applyCutStockAndLedger(row, sheetIndex, sheets, consumed) {
   if (consumed[String(sheetIndex)]) {
     return consumed;
@@ -149,7 +154,7 @@ function applyCutStockAndLedger(row, sheetIndex, sheets, consumed) {
         );
       }
       sheetPlan.rows.forEach(function (r) {
-        if (r.multiYield && r.choice === 'extra-sheet' && r.surplus > 0) {
+        if (r.surplus > 0 && r.partName && !r.isExtra) {
           addToExtraPartInventory(row.ModelName, r.partName, '', r.surplus);
         }
       });
@@ -223,28 +228,35 @@ function setMultiYieldDecision(payload) {
   if (!entry) {
     // Key not in the stored map - happens when a plan gained a multi-yield
     // flag after this PO was created (or the PO predates the feature).
-    // Rebuild the entry from the currently active plan.
-    var parts = String(payload.key).split(':');
+    // Rebuild it from the currently active plan; the key must be the binding
+    // row of its sheet-type for a decision to be valid.
+    var sheetIndex = Number(String(payload.key).split(':')[0]);
     var sheets = getOrderActiveSheets(row);
-    var sheet = sheets[Number(parts[0])];
-    var output = sheet && sheet.outputs ? sheet.outputs[Number(parts[1])] : null;
-    var my = output ? computeMultiYieldForOutput(output, Number(row.Qty) || 0) : null;
-    if (!my || !my.multiYield || my.remainder <= 0) {
+    var sheetPlan = computeOrderSheetPlan(sheets, Number(row.Qty) || 0, {})[sheetIndex];
+    if (!sheetPlan || sheetPlan.decisionKey !== payload.key) {
       throw new Error('No multi-yield remainder at ' + payload.key);
     }
+    var bindingRow = null;
+    sheetPlan.rows.forEach(function (r) { if (r.isBinding) bindingRow = r; });
     entry = {
-      partName: my.partName,
-      totalNeeded: my.totalNeeded,
-      yieldPerSheet: my.yieldPerSheet,
-      fullSheets: my.fullSheets,
-      remainder: my.remainder
+      partName: bindingRow.partName,
+      totalNeeded: bindingRow.totalNeeded,
+      yieldPerSheet: bindingRow.yieldPerSheet,
+      fullSheets: bindingRow.floorSheets,
+      remainder: bindingRow.remainder
     };
     decisions[payload.key] = entry;
   }
   entry.choice = payload.choice;
   entry.decidedAt = nowIso();
+
+  var total = 0;
+  computeOrderSheetPlan(getOrderActiveSheets(row), Number(row.Qty) || 0, decisions).forEach(function (s) {
+    total += s.physicalSheets;
+  });
   writeRowUpdates('Orders', row._rowIndex, {
-    MultiYieldDecisions: JSON.stringify(decisions)
+    MultiYieldDecisions: JSON.stringify(decisions),
+    TotalSheetsRequired: total
   });
   return getOrder(payload.poNumber);
 }

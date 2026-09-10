@@ -249,10 +249,7 @@ function renderSheetsRequired() {
       '<span><strong>' + sheetPlan.physicalSheets + '</strong> sheet' + (sheetPlan.physicalSheets === 1 ? '' : 's') + '</span>';
     box.appendChild(line);
 
-    sheetPlan.rows.forEach(function (r) {
-      if (!r.multiYield) return;
-      box.appendChild(buildMultiYieldSubline(index, r));
-    });
+    box.appendChild(buildSheetYieldDetail(sheetPlan));
   });
 
   var totalLine = document.createElement('div');
@@ -269,47 +266,50 @@ function renderSheetsRequired() {
   section.appendChild(buildStockCheck(plan));
 }
 
-function buildMultiYieldSubline(sheetIndex, r) {
+// One block per sheet-type: only shown when the sheet has a multi-yield row
+// or a binding remainder. Explains the shared-sheet math + surplus + decision.
+function buildSheetYieldDetail(sheetPlan) {
   var wrap = document.createElement('div');
+  var anyMulti = sheetPlan.rows.some(function (r) { return r.multiYield; });
+  if (!anyMulti && !sheetPlan.decisionKey) {
+    wrap.hidden = true;
+    return wrap;
+  }
   wrap.className = 'my-guidance';
 
-  var math = r.partName + ' — need ' + r.totalNeeded + ', 1 sheet yields ' + r.yieldPerSheet +
-    ' → ' + r.fullSheets + ' full sheet' + (r.fullSheets === 1 ? '' : 's') +
-    ' (' + (r.fullSheets * r.yieldPerSheet) + ' pcs)';
-  if (r.remainder > 0) {
-    math += ', ' + r.remainder + ' short';
-  } else {
-    math += ' — exact';
-  }
-  var mathEl = document.createElement('div');
-  mathEl.textContent = math;
-  wrap.appendChild(mathEl);
+  sheetPlan.rows.forEach(function (r) {
+    var l = document.createElement('div');
+    var txt = r.partName + ' — need ' + r.totalNeeded + ', ' +
+      sheetPlan.physicalSheets + ' × ' + r.yieldPerSheet + '/sheet = ' + r.produced;
+    if (r.surplus > 0) txt += ' (' + r.surplus + ' surplus → Leftover Ledger)';
+    else if (r.shortOnScrap > 0) txt += ' — ' + r.shortOnScrap + ' cut on scrap';
+    else txt += ' (exact)';
+    if (r.isBinding) txt += '  ← drives the count';
+    l.textContent = txt;
+    wrap.appendChild(l);
+  });
 
-  if (r.remainder > 0) {
-    var key = sheetIndex + ':' + r.outputIndex;
+  if (sheetPlan.decisionKey) {
+    var key = sheetPlan.decisionKey;
+    var rem = sheetPlan.bindingRemainder;
     var decision = document.createElement('div');
     decision.className = 'my-decision';
-
     var p = document.createElement('p');
     p.textContent = multiYieldChoices[key]
       ? (multiYieldChoices[key] === 'extra-sheet'
-          ? 'Chosen: cut 1 extra full sheet (' + (r.yieldPerSheet - r.remainder) + ' surplus → Leftover Ledger).'
-          : 'Chosen: cut ' + r.remainder + ' pcs on a scrap sheet (log via Extra Sheet Cut in Cutting Stage).')
-      : 'Decide (optional — can be set later in Cutting Stage):';
+          ? 'Chosen: cut 1 extra full sheet.'
+          : 'Chosen: cut the ' + rem + ' short pcs on a scrap sheet (log via Extra Sheet Cut).')
+      : rem + ' short of a full sheet on the driving part — decide (optional, can be set later in Cutting Stage):';
     decision.appendChild(p);
-
     var btns = document.createElement('div');
     btns.className = 'my-decision-btns';
     btns.appendChild(makeChoiceBtn(key, 'extra-sheet', 'Cut 1 extra full sheet'));
-    btns.appendChild(makeChoiceBtn(key, 'scrap', 'Cut ' + r.remainder + ' pcs on scrap'));
+    btns.appendChild(makeChoiceBtn(key, 'scrap', 'Cut ' + rem + ' pcs on scrap'));
     if (multiYieldChoices[key]) {
       var clear = document.createElement('button');
       clear.className = 'btn-secondary';
       clear.textContent = 'Clear';
-      clear.addEventListener('click', function () {
-        delete multiYieldChoices[key];
-        renderSheetsRequired();
-      });
+      clear.addEventListener('click', function () { delete multiYieldChoices[key]; renderSheetsRequired(); });
       btns.appendChild(clear);
     }
     decision.appendChild(btns);

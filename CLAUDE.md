@@ -162,27 +162,39 @@ animation library added; stays framework-free like the rest of the app.
   Timestamp, Note. Append-only.
 
 ### Multi-yield (`MultiYield.gs`, mirrored client-side in `app.js` as
-`computeSheetPlanClient`)
+`computeSheetPlanClient` — keep the two in sync)
 
-A plan output row flagged `multiYield` with `yieldPerSheet` means one
-physical cut of that sheet yields `yieldPerSheet` copies of the part
-(not just the per-unit `qty`). Per multi-yield row, for a PO of N units:
-`totalNeeded = N × qty`, `fullSheets = floor(totalNeeded / yieldPerSheet)`,
-`remainder = totalNeeded % yieldPerSheet`. When `remainder > 0` the PO
-carries a **decision** (`Orders.MultiYieldDecisions`, keyed
-`"<sheetIndex>:<outputIndex>"`): `extra-sheet` (cut one more full sheet;
-the `yieldPerSheet − remainder` surplus posts to the Leftover Ledger at
-cut time) or `scrap` (cut the exact `fullSheets`, operator logs the
-short pieces via the existing Extra Sheet Cut). Default `pending` —
-non-blocking at PO creation, badged on the Cutting dashboard, resolved
-from the PO's Cutting Plan tab (`setMultiYieldDecision`).
+**Shared-sheet model.** One physical cut of a sheet yields *every* output
+row's per-sheet amount at once. A plain row's per-sheet amount is its
+per-unit `qty` (the classic "1 sheet = 1 unit's worth"); a `multiYield`
+row's is `yieldPerSheet`. So for a PO of N units, per output row:
+`need = N × qty`, `perSheetYield = multiYield ? yieldPerSheet : qty`,
+`floorSheets = floor(need / perSheetYield)`, `remainder = need %
+perSheetYield`.
 
-Each multi-yield row is decided **independently**, even several on one
-sheet (locked with the user). The one physical tie-breaker: a
-sheet-type's raw-stock consumption = **max** across its rows of
-`fullSheets (+1 if extra-sheet)` / `N` for plain rows — you must cut at
-least as many physical sheets as the hungriest row needs. Stock deducts
-in `applyCutStockAndLedger` (called from `setSheetComplete` /
+A sheet-type is cut **`baseSheets` = max(`floorSheets`) across its rows**
+times — the hungriest row drives it (the "binding" row). Every other row
+overproduces; `surplus = physicalSheets × perSheetYield − need` posts to
+the Leftover Ledger at cut time (`applyCutStockAndLedger`, for *all* rows
+with surplus, not just multi-yield ones). Plain rows never have a
+remainder (`need = N·qty`, `yield = qty` ⇒ divides exactly), so the
+binding row with a remainder is always a multi-yield row — **and only
+that one row, per sheet-type, gets a decision** (`Orders.MultiYieldDecisions`,
+keyed `"<sheetIndex>:<outputIndex>"` of the binding row):
+- `extra-sheet` → `physicalSheets = baseSheets + 1` (everything
+  overproduces a bit more)
+- `scrap` → `physicalSheets = baseSheets`, operator cuts the `remainder`
+  short pieces via the existing Extra Sheet Cut
+- `pending` (default) → non-blocking at PO creation, badged on the
+  Cutting dashboard, resolved from the PO's Cutting Plan tab
+  (`setMultiYieldDecision`, which also recomputes `TotalSheetsRequired`).
+
+Worked example (the case that drove this design): sheet = `Side ×2` +
+`Top ×1 multiYield 4`, PO for 10. Side: need 20, 2/sheet → 10 sheets
+(binds, no remainder). Top: need 10, 4/sheet → rides along, 10×4 = 40
+produced, **30 surplus Top → Leftover Ledger**. No decision prompt.
+
+Stock deducts in `applyCutStockAndLedger` (from `setSheetComplete` /
 `markAllSheetsComplete`), best-effort — a stock/ledger error never
 blocks the completion checkbox.
 
