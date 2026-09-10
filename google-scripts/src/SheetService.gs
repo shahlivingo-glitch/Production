@@ -32,8 +32,29 @@ function rowsToObjects(sheet) {
   return out;
 }
 
+// Per-execution read cache. A single doGet/doPost call routinely reads the
+// same tab many times over (e.g. listPendingBendingOrders reads
+// CuttingPlans/PlanVersions once per order row) and every one of those was
+// a fresh getDataRange().getValues() round trip - that N+1 pattern is what
+// was making pages take 30+ seconds to load. This var is a fresh, empty
+// object at the start of every execution (Apps Script gives each web app
+// request its own runtime), so caching here never leaks stale data across
+// requests - only repeat reads *within* the same request are served from
+// memory. Any write (appendRow/writeRowUpdates/deleteRowsWhere) invalidates
+// the affected tab immediately so a read-after-write in the same execution
+// (e.g. createOrder appending then immediately re-reading its own row)
+// always sees fresh data.
+var _sheetRowCache = {};
+
+function invalidateSheetCache(tabName) {
+  delete _sheetRowCache[tabName];
+}
+
 function getAllRows(tabName) {
-  return rowsToObjects(getSheet(tabName));
+  if (!_sheetRowCache.hasOwnProperty(tabName)) {
+    _sheetRowCache[tabName] = rowsToObjects(getSheet(tabName));
+  }
+  return _sheetRowCache[tabName];
 }
 
 function findRows(tabName, matchFn) {
@@ -55,6 +76,7 @@ function appendRow(tabName, rowObj) {
     return rowObj.hasOwnProperty(h) ? rowObj[h] : '';
   });
   sheet.appendRow(row);
+  invalidateSheetCache(tabName);
   return rowObj;
 }
 
@@ -69,6 +91,7 @@ function writeRowUpdates(tabName, rowIndex, updates) {
     if (!idxByHeader.hasOwnProperty(key)) return;
     sheet.getRange(rowIndex, idxByHeader[key]).setValue(updates[key]);
   });
+  invalidateSheetCache(tabName);
 }
 
 function updateRowById(tabName, idColumn, idValue, updates) {
@@ -106,5 +129,6 @@ function deleteRowsWhere(tabName, matchFn) {
   rows.forEach(function (r) {
     sheet.deleteRow(r._rowIndex);
   });
+  invalidateSheetCache(tabName);
   return rows.length;
 }
