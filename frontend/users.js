@@ -220,7 +220,7 @@ function createUser() {
 document.addEventListener('DOMContentLoaded', function () {
   el('create-user-btn').addEventListener('click', createUser);
   requireAuth().then(function () {
-    renderTopNav('users');
+    renderSideNav('users');
     initUsers();
   });
 });

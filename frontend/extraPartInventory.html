@@ -14,11 +14,17 @@
   <link rel="manifest" href="site.webmanifest">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <div class="topbar">
+<body class="has-sidebar">
+  <div class="mobile-topbar">
+    <button class="mobile-nav-toggle" id="mobile-nav-toggle" aria-label="Open menu">☰</button>
     <h1>Extra Part Inventory</h1>
-    <nav class="topbar-nav"></nav>
   </div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">Almirah Tracker</div>
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    <div class="sidebar-footer" id="sidebar-footer"></div>
+  </aside>
 
   <div class="cs-dashboard" style="max-width:900px;">
     <div class="section-hint">Running stock of extra/surplus parts (the "Leftover Ledger") — from extra sheet cuts, extra parts pulled from existing sheets, and multi-yield overproduction when a PO opts to cut one extra full sheet. Accumulated by model, part, and size.</div>

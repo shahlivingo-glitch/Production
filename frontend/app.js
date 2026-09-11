@@ -107,9 +107,9 @@ var NAV_PAGES = [
 // the old static per-page <nav> HTML) plus a username + Logout control.
 // Call after requireAuth() resolves. activeKey matches a NAV_PAGES.key (or
 // 'users' for the admin-only User Management page) to bold the current page.
-function renderTopNav(activeKey) {
+function renderSideNav(activeKey) {
   var user = getCurrentUser();
-  var nav = document.querySelector('.topbar-nav');
+  var nav = el('sidebar-nav');
   if (!user || !nav) return;
   nav.innerHTML = '';
 
@@ -130,16 +130,37 @@ function renderTopNav(activeKey) {
     nav.appendChild(usersLink);
   }
 
-  var userBox = document.createElement('span');
-  userBox.className = 'topbar-user';
-  userBox.textContent = user.username + (user.role === 'admin' ? ' (Admin)' : '') + ' ';
-  var logoutBtn = document.createElement('button');
-  logoutBtn.type = 'button';
-  logoutBtn.className = 'topbar-logout-btn';
-  logoutBtn.textContent = 'Logout';
-  logoutBtn.addEventListener('click', doLogout);
-  userBox.appendChild(logoutBtn);
-  nav.appendChild(userBox);
+  var footer = el('sidebar-footer');
+  if (footer) {
+    footer.innerHTML = '';
+    var nameSpan = document.createElement('span');
+    nameSpan.textContent = user.username + (user.role === 'admin' ? ' (Admin)' : '');
+    var logoutBtn = document.createElement('button');
+    logoutBtn.type = 'button';
+    logoutBtn.className = 'sidebar-logout-btn';
+    logoutBtn.textContent = 'Logout';
+    logoutBtn.addEventListener('click', doLogout);
+    footer.appendChild(nameSpan);
+    footer.appendChild(logoutBtn);
+  }
+
+  initSidebarToggle();
+}
+
+// The hamburger button + backdrop only matter on narrow screens (see the
+// max-width:900px rule in styles.css) where the sidebar becomes an
+// off-canvas drawer - harmless to wire up unconditionally.
+function initSidebarToggle() {
+  var toggleBtn = el('mobile-nav-toggle');
+  var sidebar = el('sidebar');
+  var backdrop = el('sidebar-backdrop');
+  if (!toggleBtn || !sidebar || !backdrop) return;
+  function openSidebar() { sidebar.classList.add('open'); backdrop.classList.add('open'); }
+  function closeSidebar() { sidebar.classList.remove('open'); backdrop.classList.remove('open'); }
+  toggleBtn.addEventListener('click', function () {
+    if (sidebar.classList.contains('open')) closeSidebar(); else openSidebar();
+  });
+  backdrop.addEventListener('click', closeSidebar);
 }
 
 function apiGet(action, params) {

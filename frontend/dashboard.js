@@ -82,7 +82,7 @@ function renderDashboard(d) {
 
 document.addEventListener('DOMContentLoaded', function () {
   requireAuth().then(function () {
-    renderTopNav('dashboard');
+    renderSideNav('dashboard');
     initDashboard();
   });
 });

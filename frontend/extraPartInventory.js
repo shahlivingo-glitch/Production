@@ -46,7 +46,7 @@ function renderInventoryTable(rows) {
 
 document.addEventListener('DOMContentLoaded', function () {
   requireAuth().then(function () {
-    renderTopNav('extraInventory');
+    renderSideNav('extraInventory');
     loadExtraPartInventory();
   });
 });

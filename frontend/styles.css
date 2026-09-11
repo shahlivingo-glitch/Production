@@ -78,6 +78,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Only the authenticated app pages carry the sidebar (login.html doesn't
+   have one, so it doesn't get this class and stays unaffected). */
+body.has-sidebar {
+  margin-left: 240px;
+}
+
 h1, h2, h3 {
   font-family: var(--font-ui);
 }
@@ -213,66 +219,75 @@ a { color: var(--color-accent); }
 }
 
 /* ============================================================
-   Top bar
+   Sidebar navigation (replaces the old horizontal top bar)
    ============================================================ */
-.topbar {
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 240px;
+  height: 100vh;
   background: var(--color-primary);
   color: #fff;
-  padding: var(--space-4) var(--space-5);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3);
+  flex-direction: column;
+  z-index: 100;
+  overflow-y: auto;
+  transition: transform var(--duration-base) ease;
 }
 
-.topbar h1 {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 600;
+.sidebar-brand {
+  padding: var(--space-4);
+  font-size: 16px;
+  font-weight: 700;
   letter-spacing: -0.01em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.topbar-nav {
+.sidebar-nav {
   display: flex;
-  gap: var(--space-5);
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  flex: 1;
 }
 
-.topbar-nav a {
+.sidebar-nav a {
   color: rgba(255, 255, 255, 0.75);
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
-  transition: color var(--duration-fast) ease;
-  padding: 4px 0;
-  border-bottom: 2px solid transparent;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
+  transition: color var(--duration-fast) ease, background-color var(--duration-fast) ease;
 }
 
-.topbar-nav a:hover,
-.topbar-nav a:focus-visible {
+.sidebar-nav a:hover,
+.sidebar-nav a:focus-visible {
   color: #fff;
-  border-bottom-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.topbar-nav a.active {
+.sidebar-nav a.active {
   color: #fff;
-  border-bottom-color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.14);
+  border-left-color: var(--color-accent);
 }
 
-.topbar-user {
+.sidebar-footer {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: rgba(255, 255, 255, 0.85);
+  justify-content: space-between;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  margin-left: var(--space-3);
-  padding-left: var(--space-3);
-  border-left: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.85);
 }
 
-.topbar-logout-btn {
+.sidebar-logout-btn {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -282,10 +297,60 @@ a { color: var(--color-accent); }
   font-weight: 700;
   cursor: pointer;
   transition: background var(--duration-fast) ease;
+  white-space: nowrap;
 }
 
-.topbar-logout-btn:hover {
+.sidebar-logout-btn:hover {
   background: rgba(255, 255, 255, 0.22);
+}
+
+/* Hidden on desktop - only shown (via the media query below) on narrow
+   screens, where the sidebar itself becomes an off-canvas drawer. */
+.mobile-topbar {
+  display: none;
+  background: var(--color-primary);
+  color: #fff;
+  padding: var(--space-3) var(--space-4);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.mobile-topbar h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.mobile-nav-toggle {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  z-index: 99;
+}
+
+@media (max-width: 900px) {
+  body.has-sidebar { margin-left: 0; }
+  .mobile-topbar { display: flex; }
+  .sidebar {
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-backdrop.open { display: block; }
 }
 
 /* ============================================================
@@ -1009,7 +1074,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .muted { color: var(--color-muted-foreground); }
 
 @media (max-width: 640px) {
-  .topbar { padding: var(--space-3) var(--space-4); }
+  .mobile-topbar { padding: var(--space-3); }
   .cs-dashboard, .cs-detail { padding: var(--space-3); }
   .cs-po-card { flex-direction: column; align-items: flex-start; }
   .cs-po-card-sheets { text-align: left; }

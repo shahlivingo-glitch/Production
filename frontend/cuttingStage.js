@@ -1332,7 +1332,7 @@ function renderExtrasList() {
 
 document.addEventListener('DOMContentLoaded', function () {
   requireAuth().then(function () {
-    renderTopNav('cuttingStage');
+    renderSideNav('cuttingStage');
     initCuttingStage();
   });
 });

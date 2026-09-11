@@ -523,7 +523,7 @@ document.addEventListener('DOMContentLoaded', function () {
   el('create-po-btn').addEventListener('click', createPO);
 
   requireAuth().then(function () {
-    renderTopNav('orders');
+    renderSideNav('orders');
     if (!canEdit('orders')) {
       el('create-po-btn').style.display = 'none';
       var hint = document.createElement('div');

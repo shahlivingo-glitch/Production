@@ -135,7 +135,7 @@ function setStockFormStatus(text, cls) {
 
 document.addEventListener('DOMContentLoaded', function () {
   requireAuth().then(function () {
-    renderTopNav('sheetStock');
+    renderSideNav('sheetStock');
     if (!canEdit('sheetStock')) {
       el('ss-receive-btn').style.display = 'none';
       el('ss-adjust-btn').style.display = 'none';

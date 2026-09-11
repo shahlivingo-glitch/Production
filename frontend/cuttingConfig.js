@@ -759,7 +759,7 @@ function removeOutputRow(sheetIndex, outputIndex) {
 
 document.addEventListener('DOMContentLoaded', function () {
   requireAuth().then(function () {
-    renderTopNav('cuttingConfig');
+    renderSideNav('cuttingConfig');
     EDIT_ALLOWED = canEdit('cuttingConfig');
     applyEditMode();
     initCuttingConfig();

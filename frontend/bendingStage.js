@@ -220,7 +220,7 @@ function markAllBendingComplete() {
 
 document.addEventListener('DOMContentLoaded', function () {
   requireAuth().then(function () {
-    renderTopNav('bendingStage');
+    renderSideNav('bendingStage');
     initBendingStage();
   });
 });
