@@ -265,40 +265,35 @@ function openOrder(poNumber) {
   el('detail-error').style.display = 'none';
   el('detail-content').style.display = 'none';
 
-  Promise.all([
-    apiGet('order', { poNumber: poNumber }),
-    apiPost('activePlanVersionForOrder', { poNumber: poNumber }),
-    apiGet('cuttingExtras', { poNumber: poNumber }),
-    apiGet('cuttingConfigModels', {}),
-    apiGet('knownExtraParts', {})
-  ]).then(function (results) {
-    if (!results[0].ok) return showFatalError(results[0].error);
-    if (!results[1].ok) return showFatalError(results[1].error);
-    if (!results[2].ok) return showFatalError(results[2].error);
-    if (!results[3].ok) return showFatalError(results[3].error);
-    if (!results[4].ok) return showFatalError(results[4].error);
-
-    currentOrder = results[0].data;
-    activeVersion = results[1].data;
-    extras = results[2].data;
-    allModels = results[3].data;
-    knownExtraParts = results[4].data;
+  // Was 3 sequential round trips (5 parallel calls, then modelParts, then
+  // planVersionsForModel - each waiting on the previous wave's result); on
+  // Apps Script's ~3-5s-per-call overhead that was 9-15s to open one PO.
+  // orderDetailBundle does the same work server-side in one execution.
+  apiGet('orderDetailBundle', { poNumber: poNumber }).then(function (result) {
+    if (!result.ok) {
+      el('detail-loading').style.display = 'none';
+      el('detail-error').textContent = 'Could not load ' + poNumber + ': ' + result.error;
+      el('detail-error').style.display = 'block';
+      return;
+    }
+    var bundle = result.data;
+    currentOrder = bundle.order;
+    activeVersion = bundle.activeVersion;
+    extras = bundle.extras;
+    allModels = bundle.allModels;
+    knownExtraParts = bundle.knownExtraParts;
+    modelPartNames = Object.keys((bundle.modelParts && bundle.modelParts.partsPerUnit) || {});
+    versionHistory = bundle.versionHistory;
     refreshKnownExtraPartsDatalist();
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
 
-    return apiGet('modelParts', { modelName: currentOrder.modelName }).then(function (partsResult) {
-      if (!partsResult.ok) return showFatalError(partsResult.error);
-      modelPartNames = Object.keys(partsResult.data.partsPerUnit || {});
-      return loadVersionHistory();
-    });
-  }).then(function () {
-    if (!currentOrder) return;
     el('detail-loading').style.display = 'none';
     el('detail-content').style.display = 'block';
     el('detail-po-title').textContent = currentOrder.poNumber;
     renderStatusPill();
     renderPoSummary();
+    renderHistoryTab();
     selectTab('plan');
     renderPlanTab();
     renderExtrasTab();
@@ -851,18 +846,19 @@ function saveNewVersion() {
       setPlanSaveStatus('Save failed: ' + result.error, 'error');
       return;
     }
-    activeVersion = result.data;
+    // saveNewPlanVersion now bundles the refreshed order in with the version
+    // (its write resets SheetCompletion/status) - one round trip instead of
+    // a write followed by a separate apiGet('order', ...).
+    activeVersion = result.data.version;
+    currentOrder = result.data.order;
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
-    return apiGet('order', { poNumber: currentOrder.poNumber }).then(function (orderResult) {
-      if (orderResult.ok) currentOrder = orderResult.data;
-      renderStatusPill();
-      renderPlanTab();
-      extraPartFormState = null;
-      renderExtraPartForm();
-      setPlanSaveStatus('Saved as version ' + activeVersion.versionNumber, '');
-      loadVersionHistory();
-    });
+    renderStatusPill();
+    renderPlanTab();
+    extraPartFormState = null;
+    renderExtraPartForm();
+    setPlanSaveStatus('Saved as version ' + activeVersion.versionNumber, '');
+    loadVersionHistory();
   }).catch(function () {
     saveBtn.disabled = false;
     saveBtn.textContent = originalLabel;
@@ -964,18 +960,18 @@ function useVersionForOrder(versionId) {
   if (!confirmDiscardPlanIfDirty()) return;
   apiPost('setActivePlanVersionForOrder', { poNumber: currentOrder.poNumber, versionId: versionId }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
-    activeVersion = result.data;
+    // Same bundled {version, order} response as saveNewPlanVersion - see
+    // comment there.
+    activeVersion = result.data.version;
+    currentOrder = result.data.order;
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
-    return apiGet('order', { poNumber: currentOrder.poNumber }).then(function (orderResult) {
-      if (orderResult.ok) currentOrder = orderResult.data;
-      renderStatusPill();
-      renderPlanTab();
-      extraPartFormState = null;
-      renderExtraPartForm();
-      renderHistoryTab();
-      selectTab('plan');
-    });
+    renderStatusPill();
+    renderPlanTab();
+    extraPartFormState = null;
+    renderExtraPartForm();
+    renderHistoryTab();
+    selectTab('plan');
   }).catch(showFatalError);
 }
 

@@ -388,7 +388,24 @@ rather than assuming the write logic is wrong.
    (`appendRow`/`writeRowUpdates`/`deleteRowsWhere`) invalidate that
    tab. Fixed 30 s+ page loads from an N+1 read pattern. Fresh per web
    request, so never stale across requests.
-12. **PowerShell tool caveat** (session-specific, not app-specific):
+12. **Apps Script's real remaining cost is round trips, not per-tab reads**:
+   after the read-cache fix, a single action is ~3-5s regardless of how
+   many tabs it touches (the redirect-through-googleusercontent.com dance
+   and cold dispatch dominate) - so a screen making N *sequential* calls
+   costs N × that floor. Cutting Stage's `openOrder()` used to be 3 waves
+   (9-15s+) just to open one PO; `getOrderDetailBundle` in `Code.gs` now
+   does the same 7 sub-calls in one execution (~4s total), and
+   `saveNewPlanVersion`/`setActivePlanVersionForOrder` (`PlanVersions.gs`)
+   return `{version, order}` together instead of making the frontend
+   re-`GET order` right after. **Reused, standalone options considered
+   and explicitly declined**: replacing Apps Script with a real backend
+   (Node.js on Vercel talking to the Sheets API directly, ~200-800ms) was
+   designed and locally logic-tested in full but never shipped - the user
+   didn't want the Google Cloud service-account setup it requires. If
+   revisited, that design is the one to reach for; otherwise, keep
+   applying this same "bundle sequential round trips into one action"
+   pattern anywhere else multiple dependent calls stack up.
+13. **PowerShell tool caveat** (session-specific, not app-specific):
    variables set in one `PowerShell` tool call do not persist to the
    next call — only cwd does. Inline literal values or do multi-step
    work in one combined command block. Also: printing a deeply nested

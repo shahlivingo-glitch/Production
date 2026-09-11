@@ -100,7 +100,10 @@ function saveNewPlanVersion(payload) {
     MultiYieldDecisions: JSON.stringify(buildMultiYieldDecisions(sheets, getOrderSheetMultiplier(order), {})),
     SheetStockConsumed: JSON.stringify({})
   });
-  return getPlanVersion(versionId);
+  // Bundle the refreshed order in with the version - saveNewVersion() on the
+  // frontend used to make a separate apiGet('order', ...) call right after
+  // this just to pick up the SheetCompletion/status reset this write causes.
+  return { version: getPlanVersion(versionId), order: getOrder(payload.poNumber) };
 }
 
 function setActivePlanVersionForOrder(payload) {
@@ -125,5 +128,6 @@ function setActivePlanVersionForOrder(payload) {
     MultiYieldDecisions: JSON.stringify(buildMultiYieldDecisions(sheets, getOrderSheetMultiplier(order), {})),
     SheetStockConsumed: JSON.stringify({})
   });
-  return getPlanVersion(payload.versionId);
+  // Same bundling as saveNewPlanVersion - see comment there.
+  return { version: getPlanVersion(payload.versionId), order: getOrder(payload.poNumber) };
 }

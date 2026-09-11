@@ -2,6 +2,26 @@ function jsonOutput(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
+// Cutting Stage's openOrder() used to fire this as 3 sequential round trips
+// (5 parallel calls, then modelParts, then planVersionsForModel - each
+// dependent on the previous wave's result) - on Apps Script's ~3-5s-per-call
+// overhead that's 9-15s just to open a PO. Bundling them into one execution
+// cuts it to a single round trip; the per-request sheet-read cache in
+// SheetService.gs already dedupes any tab these sub-calls share (e.g. both
+// getOrder and getActivePlanVersionForOrder touch Orders).
+function getOrderDetailBundle(poNumber) {
+  var order = getOrder(poNumber);
+  return {
+    order: order,
+    activeVersion: getActivePlanVersionForOrder({ poNumber: poNumber }),
+    extras: listCuttingExtras(poNumber),
+    allModels: listCuttingConfigModels(),
+    knownExtraParts: listKnownExtraParts(),
+    modelParts: getModelParts(order.modelName),
+    versionHistory: listPlanVersionsForModel(order.modelName)
+  };
+}
+
 var GET_ACTIONS = {
   cuttingConfigModels: function (p) { return listCuttingConfigModels(); },
   modelParts: function (p) { return getModelParts(p.modelName); },
@@ -10,6 +30,7 @@ var GET_ACTIONS = {
   orders: function (p) { return listOrders(); },
   pendingOrders: function (p) { return listPendingOrders(); },
   order: function (p) { return getOrder(p.poNumber); },
+  orderDetailBundle: function (p) { return getOrderDetailBundle(p.poNumber); },
   previewNextPoNumber: function (p) { return previewNextPoNumber(); },
   planVersionsForModel: function (p) { return listPlanVersionsForModel(p.modelName); },
   planVersion: function (p) { return getPlanVersion(p.versionId); },
