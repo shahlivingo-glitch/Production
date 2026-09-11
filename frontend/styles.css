@@ -953,6 +953,7 @@ a { color: var(--color-accent); }
 
 .part-row-name { flex: 1; font-weight: 600; font-size: 14px; }
 .part-row input[type="number"] { width: 74px; font-variant-numeric: tabular-nums; }
+.part-row-size { width: 130px; font-size: 13px; color: var(--color-muted-foreground); }
 
 /* ============================================================
    Buttons & inputs

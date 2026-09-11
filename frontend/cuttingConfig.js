@@ -269,8 +269,18 @@ function selectPlan(planName) {
       planName: planData.planName,
       planType: planData.planType === 'bulk' ? 'bulk' : 'per-unit',
       baseQty: Number(planData.baseQty) || 0,
+      // A part's stored value is either a bare number (legacy - no size ever
+      // set) or { qty, size } once a size has been entered for it. Both read
+      // the same either way; only parts that actually use a size pay for the
+      // object shape on save (see saveModel below).
       parts: Object.keys(partsData.partsPerUnit).map(function (partName) {
-        return { name: partName, total: Number(partsData.partsPerUnit[partName]) || 0 };
+        var raw = partsData.partsPerUnit[partName];
+        var isObj = raw && typeof raw === 'object';
+        return {
+          name: partName,
+          total: Number(isObj ? raw.qty : raw) || 0,
+          size: isObj ? String(raw.size || '') : ''
+        };
       }),
       sheets: (planData.sheets || []).map(function (s) {
         return {
@@ -371,7 +381,9 @@ function saveModel() {
   saveBtn.disabled = true;
   saveBtn.innerHTML = '<span class="spinner"></span> Saving…';
   var partsPerUnit = {};
-  configState.parts.forEach(function (p) { partsPerUnit[p.name] = p.total; });
+  configState.parts.forEach(function (p) {
+    partsPerUnit[p.name] = p.size ? { qty: p.total, size: p.size } : p.total;
+  });
   var sheets = configState.sheets.map(function (s) {
     return {
       width: Number(s.width) || 0,
@@ -451,6 +463,16 @@ function renderPartsColumn() {
     name.className = 'part-row-name';
     name.textContent = part.name;
 
+    var sizeInput = document.createElement('input');
+    sizeInput.type = 'text';
+    sizeInput.className = 'part-row-size';
+    sizeInput.placeholder = 'Size (optional)';
+    sizeInput.value = part.size || '';
+    sizeInput.addEventListener('change', function (e) {
+      configState.parts[index].size = e.target.value.trim();
+      markDirty();
+    });
+
     var qtyInput = document.createElement('input');
     qtyInput.type = 'number';
     qtyInput.value = getRemainingQty(part.name);
@@ -476,6 +498,7 @@ function renderPartsColumn() {
     removeBtn.addEventListener('click', function () { removePart(index); });
 
     row.appendChild(name);
+    row.appendChild(sizeInput);
     row.appendChild(qtyInput);
     row.appendChild(removeBtn);
     body.appendChild(row);
@@ -489,6 +512,11 @@ function renderPartsColumn() {
   nameInput.placeholder = 'Part name';
   nameInput.id = 'new-part-name';
 
+  var sizeInput2 = document.createElement('input');
+  sizeInput2.placeholder = 'Size (optional)';
+  sizeInput2.id = 'new-part-size';
+  sizeInput2.style.width = '130px';
+
   var qtyInput2 = document.createElement('input');
   qtyInput2.type = 'number';
   qtyInput2.placeholder = 'Qty';
@@ -501,6 +529,7 @@ function renderPartsColumn() {
   addBtn.addEventListener('click', addPart);
 
   addRow.appendChild(nameInput);
+  addRow.appendChild(sizeInput2);
   addRow.appendChild(qtyInput2);
   addRow.appendChild(addBtn);
   body.appendChild(addRow);
@@ -508,8 +537,10 @@ function renderPartsColumn() {
 
 function addPart() {
   var nameInput = el('new-part-name');
+  var sizeInput = el('new-part-size');
   var qtyInput = el('new-part-qty');
   var name = nameInput.value.trim();
+  var size = sizeInput.value.trim();
   var qty = Number(qtyInput.value) || 0;
 
   if (!name) {
@@ -525,7 +556,7 @@ function addPart() {
     return;
   }
 
-  configState.parts.push({ name: name, total: qty });
+  configState.parts.push({ name: name, total: qty, size: size });
   markDirty();
   renderPartsColumn();
   renderSheetsColumn();
