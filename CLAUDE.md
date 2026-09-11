@@ -26,10 +26,10 @@ post-rebuild state.
   touch `google-scripts/**` — pushes code via `clasp` and updates the
   *same* deployment ID so the API URL never changes. Frontend changes
   need no workflow; Vercel's own GitHub integration handles those.
-- **No login/auth system exists.** Every page and action is open —
-  "Cutting Operator" etc. describe who a page is *for*, not an access
-  gate. Flagged repeatedly through the build; not implemented because
-  it was never explicitly asked for as its own task.
+- **Every page requires login; access is per-user, per-menu.** See
+  "Authentication & Permissions" below. (This flips a long-standing
+  fact about this app — earlier in the build there was deliberately no
+  auth at all; that's no longer true as of the login/permissions feature.)
 
 ## Live deployment identifiers
 
@@ -99,8 +99,101 @@ after `runSetup`, not just that the API returns 200.
   sheets per size (`W×H×T` only — no grade). Receive / correct stock;
   view recent movements. Deducted automatically at cut time, never at PO
   creation. May go negative (a short PO still gets created, just warns).
+- **`frontend/dashboard.html` — Dashboard.** Operational overview,
+  visible to every signed-in user regardless of menu grants: pending
+  POs/Bending counts, multi-yield decisions still awaiting a choice,
+  sheet sizes short on stock, recent activity. Pure read, no actions.
+- **`frontend/login.html` — Sign In.** Shows a one-time "Create Admin
+  Account" form instead of a login form until `AppUsers` has its first
+  row (`bootstrapStatus`'s `hasAdmin`); a normal login form after that.
+- **`frontend/users.html` — User Management.** Admin-only (the page
+  itself checks `getCurrentUser().role === 'admin'` and shows a notice
+  instead if not, in addition to every action being admin-gated
+  server-side). Create users, set each one's per-menu View/Edit/None,
+  reset a password, delete a non-admin user.
 
-All six pages link to each other via a shared top nav.
+All eight pages link to each other via a shared top nav, built
+per-user by `renderTopNav()` in `app.js` — see Authentication below.
+
+## Authentication & Permissions
+
+Every page requires being signed in; beyond that, a non-admin user's
+access is **per-menu** (one of the 6 real pages above, not Dashboard or
+User Management) at one of three levels: **None**, **View**, or **Edit**.
+Admins bypass all of this — full view+edit everywhere, plus User
+Management.
+
+- **Backend** (`google-scripts/src/Auth.gs`): passwords are
+  `SHA-256(password + random per-user salt)` — Apps Script has no
+  bcrypt/scrypt, this is the pragmatic option for a small internal tool,
+  not bank-grade. Login issues a session **token** stored in a new
+  `AppSessions` tab (`token → userId`, 30-day expiry); there's no
+  practical way to use real cookies across the three origins involved
+  (Vercel frontend, `script.google.com`, the
+  `script.googleusercontent.com` redirect the API responds through), so
+  the frontend just sends the token as a plain parameter on every
+  request — same shape as any other param (`?token=...` on GET,
+  `{token: ...}` in the POST body).
+- **`Code.gs`'s `checkAccess(token, action)`** runs before every single
+  action. 3 actions are fully public (`bootstrapStatus`, `login`,
+  `createInitialAdmin` — you can't have a token before any of these
+  succeed) plus `runSetup` (schema-only, no data exposed, and it has to
+  work before `AppUsers` even exists). Everything else needs a valid
+  session; most actions additionally belong to one of the 6 menus via
+  the `ACTION_MENUS` table and need `'view'` (reads) or `'edit'`
+  (writes) on that specific menu. A handful of cross-page reference
+  reads (`cuttingConfigModels`, `cuttingConfigPlans`, `cuttingConfigPlan`,
+  `sheetStock`, `dashboardSummary`, user-management actions, etc.) are
+  deliberately left off `ACTION_MENUS` — they only require *being signed
+  in*, not a specific menu's grant, because other pages' own workflows
+  depend on them (e.g. the PO form's model dropdown and stock-shortage
+  check don't need Cutting Configuration or Raw Sheet Stock access).
+  User-management actions enforce admin-only *themselves*
+  (`requireAdmin` inside each `Auth.gs` function), as defense in depth
+  on top of `checkAccess`.
+- **Frontend** (`frontend/app.js`): `requireAuth()` — every page except
+  `login.html` calls this first; redirects to login if there's no
+  session or the backend says it's no longer valid, otherwise refreshes
+  the cached permissions (they may have changed since last login).
+  `renderTopNav(activeKey)` rebuilds the nav from `NAV_PAGES` filtered by
+  `canView(menuKey)`, plus User Management if admin, plus a
+  username+Logout control — this *replaced* the old static per-page
+  `<nav>` HTML entirely. `canView`/`canEdit(menuKey)` read the cached
+  user's permissions (admins are handed a synthetic all-`'edit'` map by
+  `userRowToObject` so nothing needs a separate "or is admin" branch).
+- **View-only UI gating is a disclosed, intentionally partial layer —
+  the backend is the actual security boundary.** Every page's *primary*
+  mutating entry points (Save/Create/mark-done/Add-model/Add-plan/etc.)
+  check `canEdit()` and hide or disable themselves; this was verified
+  entry-point-by-entry-point per page (grep every `apiPost(` call site),
+  not just the obvious "Save" button — e.g. Cutting Configuration's
+  per-part "×" remove button calls the API immediately, bypassing Save
+  Changes entirely, and needed its own guard. What is **not**
+  individually gated: nested local-only edits that only ever reach the
+  server through an already-gated Save action (e.g. Cutting
+  Configuration's sheet/output editor, Cutting Stage's plan editor —
+  add/remove sheet/output, qty/multi-yield edits — are pure
+  `configState`/`workingSheets` mutations until "Save Changes" /
+  "Save as New Plan Version", both of which are gated). If a future
+  entry point is ever added to an editable page, it must get its own
+  `canEdit()` check — don't assume gating the visible top-level button
+  is automatically enough; re-derive it from the actual `apiPost(` call
+  sites the way this pass did.
+- **Gotcha hit while building this**: a tab literally named `Users`
+  already existed in the spreadsheet from **before this project's full
+  reset** — a different, unrelated login system from the pre-rebuild
+  app. `setupSpreadsheet()` only rewrites header row *labels*, never
+  touches existing data rows (gotcha #2), so naming the new tab `Users`
+  would have silently relabeled that old tab's stale leftover row under
+  the new columns instead of starting fresh — caught live via a phantom
+  `"Admin"` / role `"[]"` row dated from before this rebuild even began.
+  Fixed by naming the new tabs `AppUsers` / `AppSessions` instead. If a
+  `bootstrapStatus` check or similar ever again reports unexpected
+  existing state on a *brand-new* feature's first run, suspect a
+  pre-existing tab name collision before assuming the write logic is
+  wrong — same category of bug as the CuttingPlans header-collision
+  gotcha from the Bulk Unit Plan build, just triggered by a leftover
+  tab instead of a schema change.
 
 ## Styling
 
@@ -167,6 +260,13 @@ animation library added; stays framework-free like the rest of the app.
 - `SheetStockLog`: LogId, Size, Delta (+recv / −consume), Reason
   (`received` | `po-cut` | `extra-sheet-cut` | `adjustment`), PoNumber,
   Timestamp, Note. Append-only.
+- `AppUsers`: UserId, Username, PasswordHash, PasswordSalt, Role
+  (`admin` | `user`), Permissions (JSON `{menuKey: 'none'|'view'|'edit'}`,
+  one of Auth.gs's `MENU_KEYS` per key; irrelevant for admins, who get
+  everything), CreatedAt, CreatedBy. **Not** named `Users` — see
+  Authentication above for why.
+- `AppSessions`: Token, UserId, CreatedAt, ExpiresAt (30 days from
+  login). One row per signed-in browser; deleted on logout.
 
 ### Multi-yield (`MultiYield.gs`, mirrored client-side in `app.js` as
 `computeSheetPlanClient` — keep the two in sync)
@@ -416,9 +516,15 @@ rather than assuming the write logic is wrong.
 
 ## Known follow-ups / open items
 
-- No login/auth. If real access control is ever needed, it's a new
-  build, not a small addition — every action currently trusts whatever
-  `poNumber`/`modelName` etc. it's given.
+- Login/auth exists now (see "Authentication & Permissions" above) but
+  is per-*menu*, not per-*record* — a user with 'edit' on Production
+  Order Form can act on any PO, there's no "only your own POs" concept
+  or per-model/per-customer restriction. Every action still trusts
+  whatever `poNumber`/`modelName` etc. it's given *once past the menu
+  check*.
+- No self-service password reset or "forgot password" — only an admin
+  can reset another user's password (User Management), and there's no
+  email/notification system to support a real reset flow anyway.
 - Part Thickness / multi-size sheet variants: not implemented in this
   rebuild at all (a pre-reset version of this app had a "Part Thickness
   Tag" concept; it was not recreated).
