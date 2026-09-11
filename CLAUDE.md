@@ -71,12 +71,15 @@ after `runSetup`, not just that the API returns 200.
   A model can have multiple named **Plans**, each with its own sheet
   layout; **Parts in One Unit is shared across all of a model's plans**
   (fill once, not per plan). Single explicit "Save Changes" button —
-  edits are local/dirty-tracked until saved, not autosaved.
+  edits are local/dirty-tracked until saved, not autosaved. A plan also
+  has a **Plan Type** — `per-unit` (default) or `bulk` — see Bulk Unit
+  Plan below.
 - **`frontend/orders.html` — Production Order Form.** Creates a
   `Orders` row: picks Model + a named Plan + Qty, shows a live Sheets
   Required breakdown per sheet type, persists to the Sheet (backend
   assigns the real sequential PO number at save time; the displayed
-  number beforehand is just a preview).
+  number beforehand is just a preview). Against a bulk plan, Qty becomes
+  a multiplier stepper instead of a free-typed number.
 - **`frontend/cuttingStage.html` — Cutting Stage.** Operator dashboard
   (Pending POs) → per-PO Cutting Plan screen with three tabs: Cutting
   Plan (editable sheet-by-sheet breakdown, versioned — see below),
@@ -120,8 +123,10 @@ animation library added; stays framework-free like the rest of the app.
   `{width, height, thickness, outputs: [{partName, qty, multiYield?,
   yieldPerSheet?}]}` — one physical sheet per unit *unless* an output is
   `multiYield` — see Multi-yield below; a plan's sheet **count** = sheets
-  needed per unit), UpdatedAt. A model always has at least one plan
-  ("Plan 1", auto-created with the model).
+  needed per unit), UpdatedAt, PlanType (`'per-unit'` default | `'bulk'`),
+  BaseQty (0 for per-unit; for bulk, every output's `qty` above means "per
+  `BaseQty` units", not per 1 — see Bulk Unit Plan below). A model always
+  has at least one plan ("Plan 1", auto-created with the model).
 - `Orders`: PoNumber (`PO-0001`, sequential, backend-assigned —
   `generatePoNumber()` scans existing rows for the max, no separate
   counter), ModelName, PlanName (the *named* plan picked at order
@@ -142,7 +147,9 @@ animation library added; stays framework-free like the rest of the app.
   **not** reversed on uncheck). Both completion arrays plus
   MultiYieldDecisions and SheetStockConsumed are positionally tied to the
   *active plan version's* sheets and reset together whenever that version
-  changes.
+  changes. PlanType, BulkBaseQty, BulkMultiplier: snapshotted from the
+  plan **at creation** — see Bulk Unit Plan below; `Qty` always means the
+  real total unit count either way.
 - `PlanVersions`: VersionId, ModelName, VersionNumber (per-model
   counter, 1-based), SourcePlanName, Sheets (same shape as
   CuttingPlans.Sheets), CreatedAt, Note. Only ever created by an
@@ -198,6 +205,57 @@ Stock deducts in `applyCutStockAndLedger` (from `setSheetComplete` /
 `markAllSheetsComplete`), best-effort — a stock/ledger error never
 blocks the completion checkbox.
 
+### Bulk Unit Plan
+
+A plan's `PlanType` can be `'bulk'` with a `BaseQty` (e.g. 10): its
+`Sheets` outputs are then totals for `BaseQty` units, not 1. A PO against
+it moves in whole multiples via a **multiplier** stepper on the PO form
+(no free-typed qty for bulk) — `Qty = multiplier × BaseQty`, snapshotted
+onto the order as `PlanType`/`BulkBaseQty`/`BulkMultiplier` at creation
+so a later plan edit never changes how an *existing* PO's sheets compute.
+
+**The whole feature rides on one insight**: `computeOrderSheetPlan` /
+`computeSheetPlanClient` only ever take a generic multiplier "N" and
+compute `need = N × row.qty` — they don't know or care whether N means
+"units" (per-unit plan) or "batches of BaseQty" (bulk plan). So bulk
+plans reuse the *entire* multi-yield/remainder/decision/stock-need engine
+verbatim; the only real work was making sure every call site feeds the
+**right N**. `Orders.gs`'s `getOrderSheetMultiplier(row)` is the single
+source of truth for that N (`bulk ? BulkMultiplier : Qty`) — every
+backend spot that computes sheet math from an existing order
+(`applyCutStockAndLedger`, `setMultiYieldDecision`'s rebuild path,
+`saveNewPlanVersion`/`setActivePlanVersionForOrder` in `PlanVersions.gs`)
+must go through it, never read `row.Qty` directly for that purpose.
+`getCurrentOrderSheetMultiplier()` is the client-side mirror
+(`cuttingStage.js`). Missing this in `PlanVersions.gs` was an actual bug
+caught during verification: saving a new plan version on a bulk PO was
+recomputing `MultiYieldDecisions` against raw `Qty` (e.g. 20) instead of
+the multiplier (2), which would silently demand 10× too many sheets.
+
+`Bending.gs` needs no multiplier awareness at all — completion is
+per-(sheet,output) booleans regardless of qty or multiplier, per the
+Multi-yield section above.
+
+Cutting Configuration's qty-deduction column (gotcha #3 below) is
+similarly generalized: `getRemainingQty` targets `part.total × (bulk ?
+BaseQty : 1)`, so per-unit plans are byte-identical (multiplier 1) and a
+bulk plan's "remaining" is correctly scaled to a full batch.
+
+**Gotcha hit while building this**: after adding `PlanType`/`BaseQty` to
+`TAB_HEADERS.CuttingPlans`, an early `runSetup` call landed during the
+post-deploy propagation window (see gotcha #11) and ran against
+not-yet-updated code, writing only the *old* 4-column header row. Because
+`rowsToObjects` reads headers from the **physical sheet's row 1**
+(`values[0]`), not from `TAB_HEADERS` directly, the two new columns'
+blank header cells both mapped to the *same* `''` key and silently
+clobbered each other on read — `PlanType` disappeared and `BaseQty`
+appeared to have never saved, even though the write itself was correct.
+Fixed by re-running `runSetup` once propagation had actually settled.
+Lesson: after any `TAB_HEADERS` change, don't trust the *first*
+post-deploy `runSetup` — verify the header row content itself (e.g. via
+a throwaway raw-row-dump action) if a new field seems to silently vanish,
+rather than assuming the write logic is wrong.
+
 ## Key design decisions / gotchas
 
 1. **Google Sheets silently coerces numeric-looking text to real
@@ -226,14 +284,21 @@ blocks the completion checkbox.
    the API still returns 200 — misaligned data reads back "successfully"
    with wrong values in the wrong fields.
 3. **Cutting Configuration's qty-based deduction**: a part's "remaining"
-   qty shown in column 2 is always `total (shared, model-level) -
-   assigned (sum of that part's qty across every output row in the
-   *currently open plan's* sheets)` — computed fresh on every render,
-   never cached/stored. A part disappears from the visible list once
-   remaining reaches 0; reappears if an output row referencing it is
-   edited/removed. Editing the displayed number directly is interpreted
-   as the new *remaining* target, not a raw overwrite of total
-   (`newTotal = currentAssigned + typedValue`).
+   qty shown in column 2 is always `total (shared, model-level) ×
+   batchMultiplier - assigned (sum of that part's qty across every output
+   row in the *currently open plan's* sheets)` — computed fresh on every
+   render, never cached/stored. `batchMultiplier` is 1 for a per-unit
+   plan (so this is the original per-unit-only formula, unchanged) and
+   `BaseQty` for a bulk plan (its sheets target "BaseQty units' worth" of
+   each part, not 1 unit's worth — see Bulk Unit Plan above). A part
+   disappears from the visible list once remaining reaches 0; reappears
+   if an output row referencing it is edited/removed. Editing the
+   displayed number directly is interpreted as the new *remaining*
+   target in the *current plan's* units, converted back to the
+   model-wide per-unit `total` by dividing out `batchMultiplier`
+   (`newTotal = (currentAssigned + typedValue) / batchMultiplier`) —
+   important not to skip that division on a bulk plan, or a single
+   edit there would inflate the shared per-unit BOM ~`BaseQty`-fold.
 4. **Removing a part cascades across every plan for that model**, not
    just the one currently open (`removeCuttingConfigPart` on the
    backend) — the browser only holds one plan's sheets in memory at a

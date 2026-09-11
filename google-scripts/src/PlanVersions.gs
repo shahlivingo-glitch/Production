@@ -97,7 +97,7 @@ function saveNewPlanVersion(payload) {
     BendingCompletion: JSON.stringify(flattenPlanOutputs(sheets).map(function () { return false; })),
     CuttingStatus: 'pending',
     BendingStatus: 'pending',
-    MultiYieldDecisions: JSON.stringify(buildMultiYieldDecisions(sheets, Number(order.Qty) || 0, {})),
+    MultiYieldDecisions: JSON.stringify(buildMultiYieldDecisions(sheets, getOrderSheetMultiplier(order), {})),
     SheetStockConsumed: JSON.stringify({})
   });
   return getPlanVersion(versionId);
@@ -122,7 +122,7 @@ function setActivePlanVersionForOrder(payload) {
     BendingCompletion: JSON.stringify(flattenPlanOutputs(sheets).map(function () { return false; })),
     CuttingStatus: 'pending',
     BendingStatus: 'pending',
-    MultiYieldDecisions: JSON.stringify(buildMultiYieldDecisions(sheets, Number(order.Qty) || 0, {})),
+    MultiYieldDecisions: JSON.stringify(buildMultiYieldDecisions(sheets, getOrderSheetMultiplier(order), {})),
     SheetStockConsumed: JSON.stringify({})
   });
   return getPlanVersion(payload.versionId);

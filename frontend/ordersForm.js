@@ -4,6 +4,9 @@ var selectedModelSheets = null;
 var allOrders = [];
 var sheetStockMap = {};
 var multiYieldChoices = {};
+var selectedPlanType = 'per-unit';
+var selectedPlanBaseQty = 0;
+var bulkMultiplier = 1;
 
 function initOrdersForm() {
   loadModels();
@@ -84,6 +87,7 @@ function startNewDraft() {
   plans = [];
   selectedModelSheets = null;
   multiYieldChoices = {};
+  setSelectedPlanType('per-unit', 0);
   renderSheetsRequired();
 
   apiGet('previewNextPoNumber', {}).then(function (result) {
@@ -98,6 +102,7 @@ function onModelChange() {
     el('po-plan-row').style.display = 'none';
     plans = [];
     selectedModelSheets = null;
+    setSelectedPlanType('per-unit', 0);
     renderSheetsRequired();
     return;
   }
@@ -119,11 +124,13 @@ function onModelChange() {
     renderPlanDropdown();
     if (plans.length === 0) {
       selectedModelSheets = null;
+      setSelectedPlanType('per-unit', 0);
       renderSheetsRequired();
       return;
     }
-    planSelect.value = plans[0];
-    loadSheetsForPlan(modelName, plans[0]);
+    planSelect.value = plans[0].planName;
+    setSelectedPlanType(plans[0].planType, plans[0].baseQty);
+    loadSheetsForPlan(modelName, plans[0].planName);
   }).catch(function (err) {
     if (el('po-model').value !== modelName) return;
     selectedModelSheets = null;
@@ -135,18 +142,41 @@ function onModelChange() {
 function renderPlanDropdown() {
   var select = el('po-plan');
   select.innerHTML = '';
-  plans.forEach(function (planName) {
+  plans.forEach(function (plan) {
     var opt = document.createElement('option');
-    opt.value = planName;
-    opt.textContent = planName;
+    opt.value = plan.planName;
+    opt.textContent = plan.planType === 'bulk' ? plan.planName + ' (Bulk ×' + plan.baseQty + ')' : plan.planName;
     select.appendChild(opt);
   });
+}
+
+function findPlanInfo(planName) {
+  return plans.filter(function (p) { return p.planName === planName; })[0] || null;
+}
+
+function setSelectedPlanType(planType, baseQty) {
+  selectedPlanType = planType === 'bulk' ? 'bulk' : 'per-unit';
+  selectedPlanBaseQty = Number(baseQty) || 0;
+  bulkMultiplier = 1;
+  renderQtyControl();
+}
+
+function renderQtyControl() {
+  var isBulk = selectedPlanType === 'bulk';
+  el('po-qty-wrap').style.display = isBulk ? 'none' : 'block';
+  el('po-bulk-wrap').style.display = isBulk ? 'flex' : 'none';
+  if (isBulk) {
+    el('po-bulk-multiplier').value = bulkMultiplier;
+    el('po-bulk-units').textContent = '= ' + (bulkMultiplier * selectedPlanBaseQty) + ' units';
+  }
 }
 
 function onPlanChange() {
   var modelName = el('po-model').value;
   var planName = el('po-plan').value;
   if (!modelName || !planName) return;
+  var info = findPlanInfo(planName);
+  setSelectedPlanType(info ? info.planType : 'per-unit', info ? info.baseQty : 0);
   loadSheetsForPlan(modelName, planName);
 }
 
@@ -217,16 +247,21 @@ function renderSheetsRequired() {
     return;
   }
 
-  var qty = Number(el('po-qty').value) || 0;
-  if (qty <= 0) {
+  // effectiveN is whatever multiplies the plan's rows: the raw unit qty for
+  // a per-unit plan, or the batch multiplier for a bulk plan (its sheets are
+  // already totals for baseQty units, so the multiplier IS the "N").
+  var effectiveN = selectedPlanType === 'bulk' ? bulkMultiplier : (Number(el('po-qty').value) || 0);
+  if (!(effectiveN >= 1)) {
     var hint = document.createElement('div');
     hint.className = 'section-hint';
-    hint.textContent = 'Enter a qty to calculate sheets required.';
+    hint.textContent = selectedPlanType === 'bulk'
+      ? 'Choose a multiplier to calculate sheets required.'
+      : 'Enter a qty to calculate sheets required.';
     section.appendChild(hint);
     return;
   }
 
-  var plan = computeSheetPlanClient(selectedModelSheets, qty, multiYieldChoices);
+  var plan = computeSheetPlanClient(selectedModelSheets, effectiveN, multiYieldChoices);
 
   var box = document.createElement('div');
   box.className = 'sheets-required-box';
@@ -375,7 +410,8 @@ function buildStockCheck(plan) {
 function createPO() {
   var modelName = el('po-model').value;
   var planName = el('po-plan').value;
-  var qty = Number(el('po-qty').value) || 0;
+  var isBulk = selectedPlanType === 'bulk';
+  var qty = isBulk ? bulkMultiplier * selectedPlanBaseQty : (Number(el('po-qty').value) || 0);
 
   if (!modelName) {
     alert('Choose a model.');
@@ -385,8 +421,8 @@ function createPO() {
     alert('Choose a cutting plan.');
     return;
   }
-  if (qty <= 0) {
-    alert('Enter a qty greater than 0.');
+  if (isBulk ? !(bulkMultiplier >= 1) : qty <= 0) {
+    alert(isBulk ? 'Choose a multiplier of at least 1x.' : 'Enter a qty greater than 0.');
     return;
   }
   if (selectedModelSheets === undefined) {
@@ -406,16 +442,22 @@ function createPO() {
   var createBtn = el('create-po-btn');
   createBtn.disabled = true;
 
-  apiPost('createOrder', {
+  var payload = {
     modelName: modelName,
     planName: planName,
-    qty: qty,
     dxfRefNo: el('po-dxf').value,
     colourPlan: el('po-colour').value,
     deliveryDeadline: el('po-deadline').value,
     partyName: el('po-party').value,
     multiYieldDecisions: multiYieldChoices
-  }).then(function (result) {
+  };
+  if (isBulk) {
+    payload.bulkMultiplier = bulkMultiplier;
+  } else {
+    payload.qty = qty;
+  }
+
+  apiPost('createOrder', payload).then(function (result) {
     createBtn.disabled = false;
     if (!result.ok) return showFatalError(result.error);
     var msg = result.data.poNumber + ' created.';
@@ -447,11 +489,12 @@ function renderPoTable() {
 
   allOrders.slice().reverse().forEach(function (po) {
     var tr = document.createElement('tr');
+    var planCell = po.planName + (po.planType === 'bulk' ? ' <span class="muted">(Bulk ×' + po.bulkBaseQty + ', ' + po.bulkMultiplier + '×)</span>' : '');
     tr.innerHTML =
       '<td>' + po.poNumber + '</td>' +
       '<td>' + new Date(po.createdAt).toLocaleString() + '</td>' +
       '<td>' + po.modelName + '</td>' +
-      '<td>' + po.planName + '</td>' +
+      '<td>' + planCell + '</td>' +
       '<td>' + po.qty + '</td>' +
       '<td>' + po.totalSheetsRequired + '</td>' +
       '<td>' + (po.partyName || '—') + '</td>' +
@@ -460,10 +503,19 @@ function renderPoTable() {
   });
 }
 
+function setBulkMultiplier(value) {
+  bulkMultiplier = Math.max(1, Math.round(Number(value) || 1));
+  renderQtyControl();
+  renderSheetsRequired();
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   el('po-model').addEventListener('change', onModelChange);
   el('po-plan').addEventListener('change', onPlanChange);
   el('po-qty').addEventListener('input', renderSheetsRequired);
+  el('po-bulk-multiplier').addEventListener('input', function (e) { setBulkMultiplier(e.target.value); });
+  el('po-bulk-minus-btn').addEventListener('click', function () { setBulkMultiplier(bulkMultiplier - 1); });
+  el('po-bulk-plus-btn').addEventListener('click', function () { setBulkMultiplier(bulkMultiplier + 1); });
   el('create-po-btn').addEventListener('click', createPO);
   initOrdersForm();
 });

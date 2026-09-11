@@ -34,8 +34,24 @@ function orderRowToObject(r) {
     createdAt: r.CreatedAt,
     multiYieldDecisions: multiYieldDecisions,
     sheetStockConsumed: parseJsonSafe(r.SheetStockConsumed, {}),
-    hasPendingMultiYield: hasPendingMultiYield(multiYieldDecisions)
+    hasPendingMultiYield: hasPendingMultiYield(multiYieldDecisions),
+    planType: r.PlanType === 'bulk' ? 'bulk' : 'per-unit',
+    bulkBaseQty: Number(r.BulkBaseQty) || 0,
+    bulkMultiplier: Number(r.BulkMultiplier) || 0
   };
+}
+
+// The "N" that drives sheet math for this order: a bulk PO's plan rows are
+// denominated per baseQty-batch, so N is the batch multiplier, not the raw
+// unit Qty. A per-unit PO's plan rows are denominated per unit, so N is Qty.
+// Snapshotted on the order at creation - never re-derived from the model's
+// current plan, so a later plan edit can't change how an existing PO's
+// sheets are computed.
+function getOrderSheetMultiplier(row) {
+  if (row.PlanType === 'bulk') {
+    return Number(row.BulkMultiplier) || 0;
+  }
+  return Number(row.Qty) || 0;
 }
 
 // completion arrays are built via completion[idx] = value, which on a
@@ -83,7 +99,6 @@ function getOrder(poNumber) {
 function createOrder(payload) {
   var modelName = payload.modelName;
   var planName = payload.planName;
-  var qty = Number(payload.qty) || 0;
 
   if (!modelName) {
     throw new Error('Model is required');
@@ -91,18 +106,41 @@ function createOrder(payload) {
   if (!planName) {
     throw new Error('Cutting plan is required');
   }
-  if (qty <= 0) {
-    throw new Error('Qty must be greater than 0');
-  }
 
   var plan = findPlanRow(modelName, planName);
   if (!plan) {
     throw new Error('Plan not found: ' + modelName + ' / ' + planName);
   }
+  var planType = plan.PlanType === 'bulk' ? 'bulk' : 'per-unit';
+  var baseQty = Number(plan.BaseQty) || 0;
+
+  // sheetMultiplier is the "N" fed into the sheet math (computeOrderSheetPlan
+  // treats it generically as "however many times the plan's rows repeat");
+  // qty is always the real total unit count, used everywhere else.
+  var qty, bulkMultiplier, sheetMultiplier;
+  if (planType === 'bulk') {
+    bulkMultiplier = Number(payload.bulkMultiplier) || 0;
+    if (bulkMultiplier < 1) {
+      throw new Error('Choose a multiplier of at least 1x for this Bulk plan');
+    }
+    if (baseQty < 1) {
+      throw new Error('This Bulk plan has no Base Qty configured');
+    }
+    qty = bulkMultiplier * baseQty;
+    sheetMultiplier = bulkMultiplier;
+  } else {
+    bulkMultiplier = 0;
+    qty = Number(payload.qty) || 0;
+    if (qty <= 0) {
+      throw new Error('Qty must be greater than 0');
+    }
+    sheetMultiplier = qty;
+  }
+
   var sheets = parseJsonSafe(plan.Sheets, []);
-  var multiYieldDecisions = buildMultiYieldDecisions(sheets, qty, payload.multiYieldDecisions || {});
+  var multiYieldDecisions = buildMultiYieldDecisions(sheets, sheetMultiplier, payload.multiYieldDecisions || {});
   var totalSheetsRequired = 0;
-  computeOrderSheetPlan(sheets, qty, multiYieldDecisions).forEach(function (s) {
+  computeOrderSheetPlan(sheets, sheetMultiplier, multiYieldDecisions).forEach(function (s) {
     totalSheetsRequired += s.physicalSheets;
   });
 
@@ -124,7 +162,10 @@ function createOrder(payload) {
     BendingStatus: 'pending',
     CreatedAt: nowIso(),
     MultiYieldDecisions: JSON.stringify(multiYieldDecisions),
-    SheetStockConsumed: JSON.stringify({})
+    SheetStockConsumed: JSON.stringify({}),
+    PlanType: planType,
+    BulkBaseQty: planType === 'bulk' ? baseQty : 0,
+    BulkMultiplier: bulkMultiplier
   });
 
   return getOrder(poNumber);
@@ -142,9 +183,9 @@ function applyCutStockAndLedger(row, sheetIndex, sheets, consumed) {
     return consumed;
   }
   try {
-    var poQty = Number(row.Qty) || 0;
+    var multiplier = getOrderSheetMultiplier(row);
     var decisions = parseJsonSafe(row.MultiYieldDecisions, {});
-    var sheetPlan = computeOrderSheetPlan(sheets, poQty, decisions)[sheetIndex];
+    var sheetPlan = computeOrderSheetPlan(sheets, multiplier, decisions)[sheetIndex];
     if (sheetPlan) {
       if (sheetPlan.physicalSheets > 0) {
         applySheetStockDelta(
@@ -232,7 +273,7 @@ function setMultiYieldDecision(payload) {
     // row of its sheet-type for a decision to be valid.
     var sheetIndex = Number(String(payload.key).split(':')[0]);
     var sheets = getOrderActiveSheets(row);
-    var sheetPlan = computeOrderSheetPlan(sheets, Number(row.Qty) || 0, {})[sheetIndex];
+    var sheetPlan = computeOrderSheetPlan(sheets, getOrderSheetMultiplier(row), {})[sheetIndex];
     if (!sheetPlan || sheetPlan.decisionKey !== payload.key) {
       throw new Error('No multi-yield remainder at ' + payload.key);
     }
@@ -251,7 +292,7 @@ function setMultiYieldDecision(payload) {
   entry.decidedAt = nowIso();
 
   var total = 0;
-  computeOrderSheetPlan(getOrderActiveSheets(row), Number(row.Qty) || 0, decisions).forEach(function (s) {
+  computeOrderSheetPlan(getOrderActiveSheets(row), getOrderSheetMultiplier(row), decisions).forEach(function (s) {
     total += s.physicalSheets;
   });
   writeRowUpdates('Orders', row._rowIndex, {

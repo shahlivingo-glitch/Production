@@ -344,12 +344,21 @@ function loadVersionHistory() {
   });
 }
 
+// The "N" that drives sheet math, mirroring Orders.gs getOrderSheetMultiplier:
+// a bulk PO's plan is denominated per baseQty-batch, so N is the multiplier
+// snapshotted at creation, not the raw unit qty.
+function getCurrentOrderSheetMultiplier() {
+  return currentOrder.planType === 'bulk' ? currentOrder.bulkMultiplier : currentOrder.qty;
+}
+
 function renderPoSummary() {
   var box = el('po-summary');
   box.innerHTML = '';
   var fields = [
     ['Model', currentOrder.modelName],
-    ['Qty', currentOrder.qty],
+    ['Qty', currentOrder.planType === 'bulk'
+      ? currentOrder.qty + ' <span class="muted">(Bulk ×' + currentOrder.bulkBaseQty + ', ' + currentOrder.bulkMultiplier + '×)</span>'
+      : currentOrder.qty],
     ['Date', new Date(currentOrder.createdAt).toLocaleString()],
     ['Party', currentOrder.partyName || '—'],
     ['DXF Ref', currentOrder.dxfRefNo || '—'],
@@ -417,7 +426,7 @@ function renderPlanTab() {
     body.appendChild(empty);
   }
 
-  var plan = computeSheetPlanClient(workingSheets, currentOrder.qty, currentOrder.multiYieldDecisions || {});
+  var plan = computeSheetPlanClient(workingSheets, getCurrentOrderSheetMultiplier(), currentOrder.multiYieldDecisions || {});
   workingSheets.forEach(function (sheet, sheetIndex) {
     body.appendChild(buildPlanSheetCard(sheet, sheetIndex, plan[sheetIndex]));
   });
@@ -482,13 +491,16 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   dims.appendChild(buildPlanDimField('T', sheet.thickness, function (v) { workingSheets[sheetIndex].thickness = v; }));
   card.appendChild(dims);
 
-  var qty = currentOrder.qty;
+  var multiplier = getCurrentOrderSheetMultiplier();
+  var isBulk = currentOrder.planType === 'bulk';
   var totalLine = document.createElement('div');
   totalLine.className = 'cs-sheet-total-line';
   var anyMulti = sheetPlan && sheetPlan.rows.some(function (r) { return r.multiYield; });
   totalLine.textContent = (sheetPlan && anyMulti)
     ? 'Physical sheets to cut for this PO: ' + sheetPlan.physicalSheets
-    : 'Sheets needed: 1 per unit × ' + qty + ' = ' + qty + ' total';
+    : (isBulk
+        ? 'Sheets needed: 1 per batch × ' + multiplier + '× = ' + multiplier + ' total (Bulk ×' + currentOrder.bulkBaseQty + ')'
+        : 'Sheets needed: 1 per unit × ' + multiplier + ' = ' + multiplier + ' total');
   card.appendChild(totalLine);
 
   sheet.outputs.forEach(function (output, outputIndex) {
@@ -772,8 +784,9 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
 
 function updateOutputTotal(span, qtyPerSheet) {
   var perSheet = Number(qtyPerSheet) || 0;
-  var total = perSheet * currentOrder.qty;
-  span.textContent = '× ' + currentOrder.qty + ' = ' + total;
+  var multiplier = getCurrentOrderSheetMultiplier();
+  var total = perSheet * multiplier;
+  span.textContent = '× ' + multiplier + ' = ' + total;
 }
 
 function addSheet() {

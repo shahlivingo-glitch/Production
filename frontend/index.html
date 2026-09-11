@@ -54,6 +54,15 @@
 
     <div class="column" id="col-sheets">
       <h2>Sheets Used for Cutting</h2>
+      <div id="plan-type-row" class="field-row" style="display:none; flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap;">
+        <label style="margin:0;">Plan Type</label>
+        <select id="plan-type-select" style="width:auto;">
+          <option value="per-unit">Per-Unit</option>
+          <option value="bulk">Bulk</option>
+        </select>
+        <input id="plan-base-qty" type="number" min="1" placeholder="Base Qty" style="display:none; width:100px;">
+      </div>
+      <div class="section-hint" id="plan-type-hint" style="display:none;"></div>
       <div id="sheets-body"></div>
     </div>
   </div>

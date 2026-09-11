@@ -121,6 +121,7 @@ function clearSelection() {
   el('save-bar').style.display = 'none';
   el('plans-bar').style.display = 'none';
   renderPartsColumn();
+  renderPlanTypeRow();
   renderSheetsColumn();
 }
 
@@ -135,11 +136,16 @@ function selectModel(name) {
       configState = null;
       renderPlansBar();
       renderPartsColumn();
+      renderPlanTypeRow();
       renderSheetsColumn();
       return;
     }
-    selectPlan(plans[0]);
+    selectPlan(plans[0].planName);
   }).catch(showFatalError);
+}
+
+function planLabel(plan) {
+  return plan.planType === 'bulk' ? plan.planName + ' (Bulk ×' + plan.baseQty + ')' : plan.planName;
 }
 
 function renderPlansBar() {
@@ -153,12 +159,12 @@ function renderPlansBar() {
   var list = el('plans-list');
   list.innerHTML = '';
 
-  plans.forEach(function (planName) {
+  plans.forEach(function (plan) {
     var pill = document.createElement('div');
-    pill.className = 'plan-pill' + (planName === selectedPlan ? ' selected' : '');
+    pill.className = 'plan-pill' + (plan.planName === selectedPlan ? ' selected' : '');
 
     var label = document.createElement('span');
-    label.textContent = planName;
+    label.textContent = planLabel(plan);
     pill.appendChild(label);
 
     var deleteBtn = document.createElement('button');
@@ -167,14 +173,14 @@ function renderPlansBar() {
     deleteBtn.title = 'Delete plan';
     deleteBtn.addEventListener('click', function (e) {
       e.stopPropagation();
-      deletePlan(planName);
+      deletePlan(plan.planName);
     });
     pill.appendChild(deleteBtn);
 
     pill.addEventListener('click', function () {
-      if (planName === selectedPlan) return;
+      if (plan.planName === selectedPlan) return;
       if (!confirmDiscardIfDirty()) return;
-      selectPlan(planName);
+      selectPlan(plan.planName);
     });
 
     list.appendChild(pill);
@@ -210,7 +216,7 @@ function deletePlan(planName) {
       if (!listResult.ok) return showFatalError(listResult.error);
       plans = listResult.data;
       if (selectedPlan === planName) {
-        selectPlan(plans[0]);
+        selectPlan(plans[0].planName);
       } else {
         renderPlansBar();
       }
@@ -231,6 +237,8 @@ function selectPlan(planName) {
     configState = {
       modelName: partsData.modelName,
       planName: planData.planName,
+      planType: planData.planType === 'bulk' ? 'bulk' : 'per-unit',
+      baseQty: Number(planData.baseQty) || 0,
       parts: Object.keys(partsData.partsPerUnit).map(function (partName) {
         return { name: partName, total: Number(partsData.partsPerUnit[partName]) || 0 };
       }),
@@ -254,9 +262,34 @@ function selectPlan(planName) {
     el('save-bar').style.display = 'flex';
     setSaveStatus('', '');
     renderPlansBar();
+    renderPlanTypeRow();
     renderPartsColumn();
     renderSheetsColumn();
   }).catch(showFatalError);
+}
+
+function renderPlanTypeRow() {
+  var row = el('plan-type-row');
+  var hint = el('plan-type-hint');
+  if (!configState) {
+    row.style.display = 'none';
+    hint.style.display = 'none';
+    return;
+  }
+  row.style.display = 'flex';
+
+  var typeSelect = el('plan-type-select');
+  typeSelect.value = configState.planType;
+
+  var isBulk = configState.planType === 'bulk';
+  var baseQtyInput = el('plan-base-qty');
+  baseQtyInput.style.display = isBulk ? 'inline-block' : 'none';
+  baseQtyInput.value = configState.baseQty || '';
+
+  hint.style.display = 'block';
+  hint.textContent = isBulk
+    ? 'Bulk plan: every sheet/qty below is the TOTAL needed for ' + (configState.baseQty || '?') + ' units, not 1.'
+    : 'Per-unit plan: every sheet/qty below is for exactly 1 unit.';
 }
 
 function getAssignedQty(partName) {
@@ -275,7 +308,12 @@ function getAssignedQty(partName) {
 function getRemainingQty(partName) {
   var part = configState.parts.filter(function (p) { return p.name === partName; })[0];
   if (!part) return 0;
-  return part.total - getAssignedQty(partName);
+  // A bulk plan's sheets are totals for baseQty units, not 1 - so the target
+  // to fully-assign against is part.total * baseQty, not part.total. For a
+  // per-unit plan baseQty-multiplier is always 1, so this is byte-identical
+  // to the original per-unit-only formula.
+  var multiplier = configState.planType === 'bulk' ? (configState.baseQty || 0) : 1;
+  return part.total * multiplier - getAssignedQty(partName);
 }
 
 function getAvailablePartNames() {
@@ -292,6 +330,10 @@ function setSaveStatus(text, cls) {
 
 function saveModel() {
   if (!configState) return;
+  if (configState.planType === 'bulk' && !(Number(configState.baseQty) >= 1)) {
+    alert('Enter a Base Qty of at least 1 for this Bulk plan.');
+    return;
+  }
   setSaveStatus('Saving…', 'saving');
   var saveBtn = el('save-btn');
   var originalLabel = saveBtn.textContent;
@@ -322,7 +364,9 @@ function saveModel() {
     apiPost('saveCuttingConfigPlan', {
       modelName: configState.modelName,
       planName: configState.planName,
-      sheets: sheets
+      sheets: sheets,
+      planType: configState.planType,
+      baseQty: configState.planType === 'bulk' ? Number(configState.baseQty) || 0 : 0
     })
   ]).then(function (results) {
     saveBtn.disabled = false;
@@ -381,7 +425,14 @@ function renderPartsColumn() {
     qtyInput.value = getRemainingQty(part.name);
     qtyInput.addEventListener('change', function (e) {
       var typed = Number(e.target.value) || 0;
-      configState.parts[index].total = getAssignedQty(part.name) + typed;
+      // The displayed value is "remaining" in this plan's own units (bulk
+      // plans show remaining out of baseQty-scaled total). part.total is
+      // always the model-wide PER-UNIT figure shared by every plan, so
+      // convert back by dividing out the bulk multiplier.
+      var multiplier = configState.planType === 'bulk' ? (configState.baseQty || 0) : 1;
+      configState.parts[index].total = multiplier > 0
+        ? (getAssignedQty(part.name) + typed) / multiplier
+        : getAssignedQty(part.name) + typed;
       markDirty();
       renderPartsColumn();
       renderSheetsColumn();
@@ -681,11 +732,33 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   el('save-btn').addEventListener('click', saveModel);
   el('add-plan-btn').addEventListener('click', addPlan);
+  el('plan-type-select').addEventListener('change', function (e) {
+    if (!configState) return;
+    configState.planType = e.target.value;
+    if (configState.planType === 'bulk' && !configState.baseQty) {
+      configState.baseQty = 1;
+    }
+    markDirty();
+    renderPlanTypeRow();
+    renderPartsColumn();
+    renderSheetsColumn();
+  });
+  el('plan-base-qty').addEventListener('input', function (e) {
+    if (!configState) return;
+    configState.baseQty = e.target.value;
+  });
+  el('plan-base-qty').addEventListener('change', function () {
+    if (!configState) return;
+    markDirty();
+    renderPartsColumn();
+    renderSheetsColumn();
+  });
   window.addEventListener('beforeunload', function (e) {
     if (!dirty) return;
     e.preventDefault();
     e.returnValue = '';
   });
   renderPartsColumn();
+  renderPlanTypeRow();
   renderSheetsColumn();
 });

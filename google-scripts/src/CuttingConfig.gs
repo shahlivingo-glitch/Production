@@ -104,7 +104,13 @@ function deleteCuttingConfigModel(payload) {
 function listCuttingConfigPlans(modelName) {
   return getAllRows('CuttingPlans')
     .filter(function (r) { return String(r.ModelName) === String(modelName); })
-    .map(function (r) { return String(r.PlanName); });
+    .map(function (r) {
+      return {
+        planName: String(r.PlanName),
+        planType: r.PlanType === 'bulk' ? 'bulk' : 'per-unit',
+        baseQty: Number(r.BaseQty) || 0
+      };
+    });
 }
 
 function findPlanRow(modelName, planName) {
@@ -125,7 +131,9 @@ function getCuttingConfigPlan(modelName, planName) {
   return {
     modelName: String(row.ModelName),
     planName: String(row.PlanName),
-    sheets: parseJsonSafe(row.Sheets, [])
+    sheets: parseJsonSafe(row.Sheets, []),
+    planType: row.PlanType === 'bulk' ? 'bulk' : 'per-unit',
+    baseQty: Number(row.BaseQty) || 0
   };
 }
 
@@ -173,9 +181,16 @@ function saveCuttingConfigPlan(payload) {
   if (!row) {
     throw new Error('Plan not found: ' + payload.modelName + ' / ' + payload.planName);
   }
+  var planType = payload.planType === 'bulk' ? 'bulk' : 'per-unit';
+  var baseQty = Number(payload.baseQty) || 0;
+  if (planType === 'bulk' && baseQty < 1) {
+    throw new Error('Base Qty must be at least 1 for a Bulk plan');
+  }
   writeRowUpdates('CuttingPlans', row._rowIndex, {
     Sheets: JSON.stringify(payload.sheets || []),
-    UpdatedAt: nowIso()
+    UpdatedAt: nowIso(),
+    PlanType: planType,
+    BaseQty: planType === 'bulk' ? baseQty : 0
   });
   return { modelName: payload.modelName, planName: payload.planName };
 }
