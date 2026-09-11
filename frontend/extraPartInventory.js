@@ -44,4 +44,9 @@ function renderInventoryTable(rows) {
   });
 }
 
-document.addEventListener('DOMContentLoaded', loadExtraPartInventory);
+document.addEventListener('DOMContentLoaded', function () {
+  requireAuth().then(function () {
+    renderTopNav('extraInventory');
+    loadExtraPartInventory();
+  });
+});

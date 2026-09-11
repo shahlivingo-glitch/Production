@@ -4,6 +4,32 @@ var plans = [];
 var selectedPlan = null;
 var configState = null;
 var dirty = false;
+var EDIT_ALLOWED = false;
+
+// Every real backend mutation on this page funnels through 5 entry points
+// (model/plan create+delete, and Save Changes) - part/sheet/output edits are
+// local-only (configState) until Save Changes persists them, so gating just
+// these 5 blocks every write; the backend rejects them regardless if any
+// slip through.
+function blockIfViewOnly() {
+  if (EDIT_ALLOWED) return false;
+  alert("You have view-only access to Cutting Configuration - ask an admin for edit access to make changes.");
+  return true;
+}
+
+function applyEditMode() {
+  el('add-model-btn').style.display = EDIT_ALLOWED ? '' : 'none';
+  el('new-model-name').style.display = EDIT_ALLOWED ? '' : 'none';
+  el('add-plan-btn').style.display = EDIT_ALLOWED ? '' : 'none';
+  el('save-btn').style.display = EDIT_ALLOWED ? '' : 'none';
+  if (!EDIT_ALLOWED) {
+    var hint = document.createElement('span');
+    hint.className = 'section-hint';
+    hint.style.margin = '0';
+    hint.textContent = 'View only';
+    el('save-bar').appendChild(hint);
+  }
+}
 
 function initCuttingConfig() {
   loadModels();
@@ -81,6 +107,7 @@ function renderModelList() {
 }
 
 function addModel() {
+  if (blockIfViewOnly()) return;
   var input = el('new-model-name');
   var name = input.value.trim();
   if (!name) {
@@ -101,6 +128,7 @@ function addModel() {
 }
 
 function deleteModel(name) {
+  if (blockIfViewOnly()) return;
   if (!confirm('Delete model "' + name + '"? This deletes all its plans and cannot be undone.')) return;
   if (name !== selectedModel && !confirmDiscardIfDirty()) return;
   apiPost('deleteCuttingConfigModel', { modelName: name }).then(function (result) {
@@ -188,6 +216,7 @@ function renderPlansBar() {
 }
 
 function addPlan() {
+  if (blockIfViewOnly()) return;
   if (!selectedModel) return;
   if (!confirmDiscardIfDirty()) return;
   var name = prompt('Name for the new plan:', 'Plan ' + (plans.length + 1));
@@ -208,6 +237,7 @@ function addPlan() {
 }
 
 function deletePlan(planName) {
+  if (blockIfViewOnly()) return;
   if (!confirm('Delete plan "' + planName + '"? This cannot be undone.')) return;
   if (planName !== selectedPlan && !confirmDiscardIfDirty()) return;
   apiPost('deleteCuttingConfigPlan', { modelName: selectedModel, planName: planName }).then(function (result) {
@@ -329,6 +359,7 @@ function setSaveStatus(text, cls) {
 }
 
 function saveModel() {
+  if (blockIfViewOnly()) return;
   if (!configState) return;
   if (configState.planType === 'bulk' && !(Number(configState.baseQty) >= 1)) {
     alert('Enter a Base Qty of at least 1 for this Bulk plan.');
@@ -501,6 +532,7 @@ function addPart() {
 }
 
 function removePart(index) {
+  if (blockIfViewOnly()) return;
   var part = configState.parts[index];
   if (!confirmDiscardIfDirty()) return;
   if (!confirm('Remove part "' + part.name + '"? This also deletes any sheet-output rows using it, in every plan for this model. Continue?')) {
@@ -726,6 +758,13 @@ function removeOutputRow(sheetIndex, outputIndex) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+  requireAuth().then(function () {
+    renderTopNav('cuttingConfig');
+    EDIT_ALLOWED = canEdit('cuttingConfig');
+    applyEditMode();
+    initCuttingConfig();
+  });
+
   el('add-model-btn').addEventListener('click', addModel);
   el('new-model-name').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') addModel();

@@ -78,6 +78,10 @@ function renderLogTable(rows) {
 }
 
 function submitStockChange(mode) {
+  if (!canEdit('sheetStock')) {
+    setStockFormStatus('View only — ask an admin for edit access to change stock.', 'error');
+    return;
+  }
   var width = Number(el('ss-width').value) || 0;
   var height = Number(el('ss-height').value) || 0;
   var thickness = Number(el('ss-thickness').value) || 0;
@@ -129,4 +133,17 @@ function setStockFormStatus(text, cls) {
   span.style.display = 'block';
 }
 
-document.addEventListener('DOMContentLoaded', initSheetStock);
+document.addEventListener('DOMContentLoaded', function () {
+  requireAuth().then(function () {
+    renderTopNav('sheetStock');
+    if (!canEdit('sheetStock')) {
+      el('ss-receive-btn').style.display = 'none';
+      el('ss-adjust-btn').style.display = 'none';
+      var hint = document.createElement('div');
+      hint.className = 'section-hint';
+      hint.textContent = 'View only — ask an admin for edit access to change stock.';
+      el('ss-form-status').parentNode.insertBefore(hint, el('ss-form-status'));
+    }
+    initSheetStock();
+  });
+});

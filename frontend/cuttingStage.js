@@ -37,6 +37,11 @@ function initCuttingStage() {
     e.preventDefault();
     e.returnValue = '';
   });
+  if (!canEdit('cuttingStage')) {
+    el('mark-all-complete-btn').style.display = 'none';
+    el('save-version-btn').style.display = 'none';
+    el('add-sheet-btn').style.display = 'none';
+  }
   showDashboard();
 }
 
@@ -130,6 +135,11 @@ function skipExtraPrompt() {
 }
 
 function saveExtraPromptAndProceed() {
+  if (!canEdit('cuttingStage')) {
+    alert('View only - ask an admin for edit access to log extras.');
+    cancelExtraPrompt();
+    return;
+  }
   var sheetIndex = extraPromptState.sheetIndex;
   var onDone = extraPromptState.onDone;
   var rowsToSave = extraPromptState.rows.filter(function (r) { return r.partName && Number(r.qty) > 0; });
@@ -368,6 +378,10 @@ function renderPoSummary() {
 }
 
 function markAllComplete() {
+  if (!canEdit('cuttingStage')) {
+    alert('View only - ask an admin for edit access to mark sheets complete.');
+    return;
+  }
   if (!confirm('Mark every sheet in ' + currentOrder.poNumber + ' as complete?')) return;
   apiPost('markAllSheetsComplete', { poNumber: currentOrder.poNumber }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
@@ -378,6 +392,11 @@ function markAllComplete() {
 }
 
 function toggleSheetComplete(sheetIndex, completed) {
+  if (!canEdit('cuttingStage')) {
+    showFatalError('View only - ask an admin for edit access to mark sheets complete.');
+    renderPlanTab();
+    return;
+  }
   apiPost('setSheetComplete', {
     poNumber: currentOrder.poNumber,
     sheetIndex: sheetIndex,
@@ -428,6 +447,10 @@ function renderPlanTab() {
 }
 
 function resolveMultiYieldDecision(key, choice) {
+  if (!canEdit('cuttingStage')) {
+    alert('View only - ask an admin for edit access to resolve this.');
+    return;
+  }
   apiPost('setMultiYieldDecision', {
     poNumber: currentOrder.poNumber,
     key: key,
@@ -457,6 +480,7 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   var doneCheckbox = document.createElement('input');
   doneCheckbox.type = 'checkbox';
   doneCheckbox.checked = done;
+  doneCheckbox.disabled = !canEdit('cuttingStage');
   doneCheckbox.addEventListener('change', function (e) {
     if (e.target.checked) {
       showExtraPartsModal(sheetIndex, function () { toggleSheetComplete(sheetIndex, true); });
@@ -809,6 +833,10 @@ function removeOutputRow(sheetIndex, outputIndex) {
 }
 
 function saveNewVersion() {
+  if (!canEdit('cuttingStage')) {
+    alert('View only - ask an admin for edit access to save a plan version.');
+    return;
+  }
   var sheets = workingSheets.map(function (s) {
     return {
       width: Number(s.width) || 0,
@@ -957,6 +985,10 @@ function buildVersionPreview(versionId) {
 }
 
 function useVersionForOrder(versionId) {
+  if (!canEdit('cuttingStage')) {
+    alert('View only - ask an admin for edit access to switch plan versions.');
+    return;
+  }
   if (!confirmDiscardPlanIfDirty()) return;
   apiPost('setActivePlanVersionForOrder', { poNumber: currentOrder.poNumber, versionId: versionId }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
@@ -1067,7 +1099,9 @@ function renderExtraSheetForm() {
   submitBtn.className = 'btn-primary btn-block';
   submitBtn.style.marginTop = '10px';
   submitBtn.textContent = 'Log Extra Sheet Cut';
+  submitBtn.disabled = !canEdit('cuttingStage');
   submitBtn.addEventListener('click', function () {
+    if (!canEdit('cuttingStage')) { alert('View only - ask an admin for edit access to log extras.'); return; }
     var partsProduced = {};
     state.outputs.forEach(function (o) {
       if (o.partName && Number(o.qty) > 0) partsProduced[o.partName] = Number(o.qty);
@@ -1199,7 +1233,9 @@ function renderExtraPartForm() {
   var submitBtn = document.createElement('button');
   submitBtn.className = 'btn-primary btn-block';
   submitBtn.textContent = 'Log Extra Part';
+  submitBtn.disabled = !canEdit('cuttingStage');
   submitBtn.addEventListener('click', function () {
+    if (!canEdit('cuttingStage')) { alert('View only - ask an admin for edit access to log extras.'); return; }
     if (state.sheetIndex === '') {
       alert('Choose which sheet this came from.');
       return;
@@ -1294,4 +1330,9 @@ function renderExtrasList() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', initCuttingStage);
+document.addEventListener('DOMContentLoaded', function () {
+  requireAuth().then(function () {
+    renderTopNav('cuttingStage');
+    initCuttingStage();
+  });
+});

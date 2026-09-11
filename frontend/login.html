@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="icon" href="favicon.ico">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body style="background:var(--color-primary); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:var(--space-4);">
+  <div class="column" style="max-width:380px; width:100%;">
+    <h2 style="margin-top:0;">Almirah Production Tracker</h2>
+
+    <div id="loading-state" class="loading-state">
+      <div class="loading-spinner-lg"></div>
+      <p>Loading…</p>
+    </div>
+
+    <div id="setup-form" style="display:none;">
+      <div class="section-hint">No admin account exists yet — set one up now. You'll use this to sign in and to create other users afterward.</div>
+      <div class="field-row">
+        <label>Admin Username</label>
+        <input id="setup-username" autocomplete="username">
+      </div>
+      <div class="field-row">
+        <label>Password (min 6 characters)</label>
+        <input id="setup-password" type="password" autocomplete="new-password">
+      </div>
+      <div class="field-row">
+        <label>Confirm Password</label>
+        <input id="setup-password2" type="password" autocomplete="new-password">
+      </div>
+      <div id="setup-error" class="alert-banner" style="display:none;"></div>
+      <button class="btn-primary btn-block" id="setup-btn">Create Admin Account</button>
+    </div>
+
+    <div id="login-form" style="display:none;">
+      <div class="field-row">
+        <label>Username</label>
+        <input id="login-username" autocomplete="username">
+      </div>
+      <div class="field-row">
+        <label>Password</label>
+        <input id="login-password" type="password" autocomplete="current-password">
+      </div>
+      <div id="login-error" class="alert-banner" style="display:none;"></div>
+      <button class="btn-primary btn-block" id="login-btn">Sign In</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="login.js"></script>
+</body>
+</html>

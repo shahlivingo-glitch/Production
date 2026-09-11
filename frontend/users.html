@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="icon" href="favicon.ico">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>User Management</h1>
+    <nav class="topbar-nav"></nav>
+  </div>
+
+  <div id="not-admin-notice" class="alert-banner" style="display:none; margin:var(--space-4);">Admin access required — you don't have permission to view this page.</div>
+
+  <div id="page-body" class="po-layout" style="display:none;">
+    <div class="column" style="flex:0 0 360px;">
+      <h2>Add User</h2>
+      <div class="field-row">
+        <label>Username</label>
+        <input id="new-username">
+      </div>
+      <div class="field-row">
+        <label>Password (min 6 characters)</label>
+        <input id="new-password" type="password" autocomplete="new-password">
+      </div>
+      <div class="section-title">Permissions</div>
+      <div id="new-permissions-grid"></div>
+      <div id="new-user-error" class="alert-banner" style="display:none;"></div>
+      <button class="btn-primary btn-block" id="create-user-btn" style="margin-top:8px;">Create User</button>
+    </div>
+
+    <div class="column" style="flex:1; min-width:420px;">
+      <h2>Users</h2>
+      <div id="users-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading Users…</p>
+      </div>
+      <div id="users-error" class="alert-banner" style="display:none;"></div>
+      <div id="users-list"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="users.js"></script>
+</body>
+</html>

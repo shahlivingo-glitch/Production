@@ -4,6 +4,9 @@ var currentBendingQueue = null;
 function initBendingStage() {
   el('back-to-dashboard-btn').addEventListener('click', showBendingDashboard);
   el('mark-all-complete-btn').addEventListener('click', markAllBendingComplete);
+  if (!canEdit('bendingStage')) {
+    el('mark-all-complete-btn').style.display = 'none';
+  }
   showBendingDashboard();
 }
 
@@ -151,7 +154,7 @@ function buildBendingEntryCard(entry) {
   var checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.checked = entry.done;
-  checkbox.disabled = !entry.unlocked;
+  checkbox.disabled = !entry.unlocked || !canEdit('bendingStage');
   checkbox.addEventListener('change', function (e) {
     toggleBendingEntry(entry.index, e.target.checked);
   });
@@ -177,6 +180,11 @@ function buildBendingEntryCard(entry) {
 }
 
 function toggleBendingEntry(entryIndex, completed) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to mark parts done.');
+    renderBendingEntries();
+    return;
+  }
   apiPost('setBendingComplete', {
     poNumber: currentBendingQueue.poNumber,
     entryIndex: entryIndex,
@@ -197,6 +205,10 @@ function toggleBendingEntry(entryIndex, completed) {
 }
 
 function markAllBendingComplete() {
+  if (!canEdit('bendingStage')) {
+    alert('View only - ask an admin for edit access to mark parts done.');
+    return;
+  }
   if (!confirm('Mark every currently-available part for ' + currentBendingQueue.poNumber + ' as bent?')) return;
   apiPost('markAllBendingComplete', { poNumber: currentBendingQueue.poNumber }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
@@ -206,4 +218,9 @@ function markAllBendingComplete() {
   }).catch(showFatalError);
 }
 
-document.addEventListener('DOMContentLoaded', initBendingStage);
+document.addEventListener('DOMContentLoaded', function () {
+  requireAuth().then(function () {
+    renderTopNav('bendingStage');
+    initBendingStage();
+  });
+});

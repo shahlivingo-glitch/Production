@@ -255,6 +255,84 @@ a { color: var(--color-accent); }
   border-bottom-color: rgba(255, 255, 255, 0.5);
 }
 
+.topbar-nav a.active {
+  color: #fff;
+  border-bottom-color: var(--color-accent);
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-weight: 600;
+  margin-left: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.topbar-logout-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--duration-fast) ease;
+}
+
+.topbar-logout-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ============================================================
+   Dashboard
+   ============================================================ */
+.dash-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.dash-tile {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.dash-tile-num {
+  font-family: var(--font-mono);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-tile-label {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  margin-top: 4px;
+}
+
+.dash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 10px var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: 13px;
+  box-shadow: var(--shadow-sm);
+}
+
 /* ============================================================
    Status pills
    ============================================================ */

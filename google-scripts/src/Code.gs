@@ -22,7 +22,101 @@ function getOrderDetailBundle(poNumber) {
   };
 }
 
+// --- Access control -------------------------------------------------------
+// Every action requires a valid session token EXCEPT the 3 below (you can't
+// have a token before you've logged in, or before the very first admin
+// account exists). Beyond "is signed in", most actions ALSO belong to one of
+// the 6 page menus (Auth.gs's MENU_KEYS) and need 'view' (reads) or 'edit'
+// (writes) on that menu specifically - admins bypass this part entirely.
+// A few reference reads used across multiple pages' own workflows (e.g. the
+// model dropdown on the PO form) are left at "just signed in", not tied to
+// one page's grant - see the comment below ACTION_MENUS.
+// runSetup is public too: it only (re)writes tab/header labels from the
+// constant TAB_HEADERS - no data exposed or mutated - and it has to be
+// callable before any user/session exists yet (it's what CREATES the
+// Users/Sessions tabs in the first place on a fresh spreadsheet).
+var PUBLIC_ACTIONS = { bootstrapStatus: true, login: true, createInitialAdmin: true, runSetup: true };
+
+var ACTION_MENUS = {
+  // Cutting Configuration
+  createCuttingConfigModel: ['cuttingConfig', 'edit'],
+  createCuttingConfigPlan: ['cuttingConfig', 'edit'],
+  deleteCuttingConfigModel: ['cuttingConfig', 'edit'],
+  deleteCuttingConfigPlan: ['cuttingConfig', 'edit'],
+  saveModelParts: ['cuttingConfig', 'edit'],
+  removeCuttingConfigPart: ['cuttingConfig', 'edit'],
+  saveCuttingConfigPlan: ['cuttingConfig', 'edit'],
+  modelParts: ['cuttingConfig', 'view'],
+
+  // Production Order Form
+  orders: ['orders', 'view'],
+  order: ['orders', 'view'],
+  createOrder: ['orders', 'edit'],
+  previewNextPoNumber: ['orders', 'view'],
+
+  // Cutting Stage
+  pendingOrders: ['cuttingStage', 'view'],
+  orderDetailBundle: ['cuttingStage', 'view'],
+  setSheetComplete: ['cuttingStage', 'edit'],
+  markAllSheetsComplete: ['cuttingStage', 'edit'],
+  activePlanVersionForOrder: ['cuttingStage', 'edit'],
+  saveNewPlanVersion: ['cuttingStage', 'edit'],
+  setActivePlanVersionForOrder: ['cuttingStage', 'edit'],
+  addCuttingExtra: ['cuttingStage', 'edit'],
+  setMultiYieldDecision: ['cuttingStage', 'edit'],
+  planVersionsForModel: ['cuttingStage', 'view'],
+  planVersion: ['cuttingStage', 'view'],
+  cuttingExtras: ['cuttingStage', 'view'],
+  knownExtraParts: ['cuttingStage', 'view'],
+
+  // Bending Stage
+  pendingBendingOrders: ['bendingStage', 'view'],
+  bendingQueueForOrder: ['bendingStage', 'view'],
+  setBendingComplete: ['bendingStage', 'edit'],
+  markAllBendingComplete: ['bendingStage', 'edit'],
+
+  // Extra Part Inventory (view-only page - no edit actions exist for it)
+  extraPartInventory: ['extraInventory', 'view'],
+
+  // Raw Sheet Stock
+  sheetStockLog: ['sheetStock', 'view'],
+  receiveSheetStock: ['sheetStock', 'edit'],
+  adjustSheetStock: ['sheetStock', 'edit']
+  // cuttingConfigModels/cuttingConfigPlans/cuttingConfigPlan/sheetStock and
+  // dashboardSummary/whoAmI/logout/changeOwnPassword/listUsers/createUser/
+  // updateUserPermissions/resetUserPassword/deleteUser are intentionally
+  // absent here - they fall through to "just needs to be signed in" below.
+  // The model/plan/stock reads are genuinely cross-page (e.g. the PO form's
+  // model dropdown and stock-shortage check don't require Cutting
+  // Configuration or Raw Sheet Stock access to use); the user-management
+  // actions enforce admin-only themselves (Auth.gs's requireAdmin), and
+  // dashboardSummary is meant for every signed-in user regardless of menus.
+};
+
+function checkAccess(token, action) {
+  if (PUBLIC_ACTIONS[action]) {
+    return;
+  }
+  var userRow = getSessionUser(token);
+  if (!userRow) {
+    throw new Error('Not signed in.');
+  }
+  var rule = ACTION_MENUS[action];
+  if (rule && userRow.Role !== 'admin') {
+    var perms = parseJsonSafe(userRow.Permissions, {});
+    var have = perms[rule[0]] || 'none';
+    var needed = rule[1];
+    var ok = needed === 'view' ? (have === 'view' || have === 'edit') : have === 'edit';
+    if (!ok) {
+      throw new Error('You do not have access to this section. Ask an admin to grant it.');
+    }
+  }
+}
+
 var GET_ACTIONS = {
+  bootstrapStatus: function (p) { return bootstrapStatus(); },
+  whoAmI: function (p) { return whoAmI(p); },
+  dashboardSummary: function (p) { return getDashboardSummary(); },
   cuttingConfigModels: function (p) { return listCuttingConfigModels(); },
   modelParts: function (p) { return getModelParts(p.modelName); },
   cuttingConfigPlans: function (p) { return listCuttingConfigPlans(p.modelName); },
@@ -41,6 +135,7 @@ var GET_ACTIONS = {
   bendingQueueForOrder: function (p) { return getBendingQueueForOrder(p.poNumber); },
   sheetStock: function (p) { return listSheetStock(); },
   sheetStockLog: function (p) { return listSheetStockLog(p.limit); },
+  listUsers: function (p) { return listUsers(p); },
   runSetup: function (p) {
     setupSpreadsheet();
     return { ran: true };
@@ -48,6 +143,14 @@ var GET_ACTIONS = {
 };
 
 var POST_ACTIONS = {
+  createInitialAdmin: function (b) { return createInitialAdmin(b); },
+  login: function (b) { return login(b); },
+  logout: function (b) { return logout(b); },
+  changeOwnPassword: function (b) { return changeOwnPassword(b); },
+  createUser: function (b) { return createUser(b); },
+  updateUserPermissions: function (b) { return updateUserPermissions(b); },
+  resetUserPassword: function (b) { return resetUserPassword(b); },
+  deleteUser: function (b) { return deleteUser(b); },
   createCuttingConfigModel: function (b) { return createCuttingConfigModel(b); },
   createCuttingConfigPlan: function (b) { return createCuttingConfigPlan(b); },
   deleteCuttingConfigModel: function (b) { return deleteCuttingConfigModel(b); },
@@ -75,6 +178,7 @@ function doGet(e) {
     return jsonOutput({ ok: false, error: 'Unknown action: ' + e.parameter.action });
   }
   try {
+    checkAccess(e.parameter.token, e.parameter.action);
     return jsonOutput({ ok: true, data: handler(e.parameter) });
   } catch (err) {
     return jsonOutput({ ok: false, error: err.message });
@@ -94,6 +198,7 @@ function doPost(e) {
     return jsonOutput({ ok: false, error: 'Unknown action: ' + body.action });
   }
   try {
+    checkAccess(body.token, body.action);
     return jsonOutput({ ok: true, data: handler(body) });
   } catch (err) {
     return jsonOutput({ ok: false, error: err.message });

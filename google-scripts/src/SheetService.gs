@@ -6,7 +6,16 @@ var TAB_HEADERS = {
   CuttingExtras: ['ExtraId', 'PoNumber', 'Type', 'Details', 'Timestamp'],
   ExtraPartInventory: ['ModelName', 'PartName', 'Size', 'Qty', 'UpdatedAt'],
   SheetStock: ['Size', 'Width', 'Height', 'Thickness', 'Qty', 'UpdatedAt'],
-  SheetStockLog: ['LogId', 'Size', 'Delta', 'Reason', 'PoNumber', 'Timestamp', 'Note']
+  SheetStockLog: ['LogId', 'Size', 'Delta', 'Reason', 'PoNumber', 'Timestamp', 'Note'],
+  // Named AppUsers/AppSessions, not Users/Sessions - a tab literally named
+  // "Users" already existed in this spreadsheet from before the project's
+  // full reset (a different, unrelated login system). setupSpreadsheet()
+  // only rewrites header LABELS, never touches existing data rows (gotcha
+  // #2), so reusing that name would have silently relabeled that old tab's
+  // stale row underneath our new columns instead of starting fresh - caught
+  // live via a stray "Admin" row dated from before this rebuild even began.
+  AppUsers: ['UserId', 'Username', 'PasswordHash', 'PasswordSalt', 'Role', 'Permissions', 'CreatedAt', 'CreatedBy'],
+  AppSessions: ['Token', 'UserId', 'CreatedAt', 'ExpiresAt']
 };
 
 function getSheet(tabName) {

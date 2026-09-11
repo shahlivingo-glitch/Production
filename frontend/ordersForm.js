@@ -408,6 +408,10 @@ function buildStockCheck(plan) {
 }
 
 function createPO() {
+  if (!canEdit('orders')) {
+    alert('You have view-only access to Production Order Form - ask an admin for edit access to create a PO.');
+    return;
+  }
   var modelName = el('po-model').value;
   var planName = el('po-plan').value;
   var isBulk = selectedPlanType === 'bulk';
@@ -517,5 +521,16 @@ document.addEventListener('DOMContentLoaded', function () {
   el('po-bulk-minus-btn').addEventListener('click', function () { setBulkMultiplier(bulkMultiplier - 1); });
   el('po-bulk-plus-btn').addEventListener('click', function () { setBulkMultiplier(bulkMultiplier + 1); });
   el('create-po-btn').addEventListener('click', createPO);
-  initOrdersForm();
+
+  requireAuth().then(function () {
+    renderTopNav('orders');
+    if (!canEdit('orders')) {
+      el('create-po-btn').style.display = 'none';
+      var hint = document.createElement('div');
+      hint.className = 'section-hint';
+      hint.textContent = 'View only — ask an admin for edit access to create a PO.';
+      el('create-po-btn').parentNode.appendChild(hint);
+    }
+    initOrdersForm();
+  });
 });
