@@ -7,6 +7,8 @@ var multiYieldChoices = {};
 var selectedPlanType = 'per-unit';
 var selectedPlanBaseQty = 0;
 var bulkMultiplier = 1;
+var plansLoadError = null; // { modelName, message } - set when cuttingConfigPlans fails, so the dropdown isn't stuck on "Loading..." with no way out
+var sheetsLoadError = null; // { modelName, planName, message } - same idea for the sheets-required section
 
 function initOrdersForm() {
   loadModels();
@@ -87,6 +89,8 @@ function startNewDraft() {
   plans = [];
   selectedModelSheets = null;
   multiYieldChoices = {};
+  plansLoadError = null;
+  sheetsLoadError = null;
   setSelectedPlanType('per-unit', 0);
   renderSheetsRequired();
 
@@ -102,23 +106,35 @@ function onModelChange() {
     el('po-plan-row').style.display = 'none';
     plans = [];
     selectedModelSheets = null;
+    plansLoadError = null;
+    sheetsLoadError = null;
     setSelectedPlanType('per-unit', 0);
     renderSheetsRequired();
     return;
   }
 
   el('po-plan-row').style.display = 'flex';
+  loadPlansForModel(modelName);
+}
+
+// Split out of onModelChange so a failed load can be retried in place (via
+// the button in renderSheetsRequired's error banner) without the "Cutting
+// Plan" dropdown getting stuck showing "Loading..." forever.
+function loadPlansForModel(modelName) {
   var planSelect = el('po-plan');
   planSelect.innerHTML = '<option value="">Loading…</option>';
   selectedModelSheets = undefined;
+  plansLoadError = null;
+  sheetsLoadError = null;
   renderSheetsRequired();
 
   apiGet('cuttingConfigPlans', { modelName: modelName }).then(function (result) {
     if (el('po-model').value !== modelName) return;
     if (!result.ok) {
-      selectedModelSheets = null;
+      plansLoadError = { modelName: modelName, message: result.error };
+      planSelect.innerHTML = '<option value="">-- failed to load --</option>';
       renderSheetsRequired();
-      return showFatalError(result.error);
+      return;
     }
     plans = result.data;
     renderPlanDropdown();
@@ -133,9 +149,9 @@ function onModelChange() {
     loadSheetsForPlan(modelName, plans[0].planName);
   }).catch(function (err) {
     if (el('po-model').value !== modelName) return;
-    selectedModelSheets = null;
+    plansLoadError = { modelName: modelName, message: err && err.message ? err.message : err };
+    planSelect.innerHTML = '<option value="">-- failed to load --</option>';
     renderSheetsRequired();
-    showFatalError(err);
   });
 }
 
@@ -182,23 +198,45 @@ function onPlanChange() {
 
 function loadSheetsForPlan(modelName, planName) {
   selectedModelSheets = undefined;
+  sheetsLoadError = null;
   multiYieldChoices = {};
   renderSheetsRequired();
   apiGet('cuttingConfigPlan', { modelName: modelName, planName: planName }).then(function (result) {
     if (el('po-model').value !== modelName || el('po-plan').value !== planName) return;
     if (!result.ok) {
       selectedModelSheets = null;
+      sheetsLoadError = { modelName: modelName, planName: planName, message: result.error };
       renderSheetsRequired();
-      return showFatalError(result.error);
+      return;
     }
     selectedModelSheets = result.data.sheets || [];
     renderSheetsRequired();
   }).catch(function (err) {
     if (el('po-model').value !== modelName || el('po-plan').value !== planName) return;
     selectedModelSheets = null;
+    sheetsLoadError = { modelName: modelName, planName: planName, message: err && err.message ? err.message : err };
     renderSheetsRequired();
-    showFatalError(err);
   });
+}
+
+// Used for both the plans-load and sheets-load failure cases so a genuine
+// failure (as opposed to a transient one already ridden out by apiGet's own
+// retry) leaves the user with a clear message and a one-click way to try
+// again, instead of a dead "Loading..." state.
+function buildLoadErrorBanner(message, onRetry) {
+  var warn = document.createElement('div');
+  warn.className = 'alert-banner';
+  var text = document.createElement('div');
+  text.textContent = message;
+  warn.appendChild(text);
+  var retryBtn = document.createElement('button');
+  retryBtn.type = 'button';
+  retryBtn.className = 'btn-secondary';
+  retryBtn.style.marginTop = 'var(--space-2)';
+  retryBtn.textContent = 'Retry';
+  retryBtn.addEventListener('click', onRetry);
+  warn.appendChild(retryBtn);
+  return warn;
 }
 
 function sheetLabel(sheet, index) {
@@ -219,6 +257,14 @@ function renderSheetsRequired() {
     return;
   }
 
+  if (plansLoadError && plansLoadError.modelName === modelName) {
+    section.appendChild(buildLoadErrorBanner(
+      'Could not load cutting plans for "' + modelName + '": ' + plansLoadError.message,
+      function () { loadPlansForModel(modelName); }
+    ));
+    return;
+  }
+
   if (plans.length === 0 && selectedModelSheets === null) {
     var noPlan = document.createElement('div');
     noPlan.className = 'alert-banner';
@@ -236,6 +282,13 @@ function renderSheetsRequired() {
   }
 
   if (selectedModelSheets === null) {
+    if (sheetsLoadError && sheetsLoadError.modelName === modelName) {
+      var planName = sheetsLoadError.planName;
+      section.appendChild(buildLoadErrorBanner(
+        'Could not load sheet data for "' + planName + '": ' + sheetsLoadError.message,
+        function () { loadSheetsForPlan(modelName, planName); }
+      ));
+    }
     return;
   }
 
