@@ -287,12 +287,53 @@ function buildExtraBendingEntryCard(entry) {
   var useInventoryBox = buildUseInventoryCheckbox(entry);
   if (useInventoryBox) card.appendChild(useInventoryBox);
 
+  // Second chance for whoever didn't check "Also add to Extra Part
+  // Inventory" back in Cutting Stage's logging form - a one-time action,
+  // hidden once it's actually been added (either from there, or from a
+  // previous click here).
+  if (!entry.alreadyInInventory) {
+    var addToInventoryBtn = document.createElement('button');
+    addToInventoryBtn.type = 'button';
+    addToInventoryBtn.className = 'btn-secondary';
+    addToInventoryBtn.style.marginTop = 'var(--space-3)';
+    addToInventoryBtn.textContent = 'Add to Extra Part Inventory';
+    addToInventoryBtn.disabled = !canEdit('bendingStage');
+    addToInventoryBtn.addEventListener('click', function () {
+      addExtraToInventoryNow(entry.extraKey, addToInventoryBtn);
+    });
+    card.appendChild(addToInventoryBtn);
+  }
+
   checkbox.addEventListener('change', function (e) {
     var useFromInventory = !!(useInventoryBox && useInventoryBox._checkbox.checked);
     toggleExtraBendingEntry(entry.extraKey, e.target.checked, useFromInventory);
   });
 
   return card;
+}
+
+function addExtraToInventoryNow(extraKey, btn) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to change this.');
+    return;
+  }
+  btn.disabled = true;
+  apiPost('addExtraToInventoryNow', {
+    poNumber: currentBendingQueue.poNumber,
+    extraKey: extraKey
+  }).then(function (result) {
+    if (!result.ok) {
+      btn.disabled = false;
+      showFatalError(result.error);
+      return;
+    }
+    // Server doesn't return the full queue here (unlike the completion
+    // actions) - just re-fetch it so alreadyInInventory reflects the change.
+    openBendingOrder(currentBendingQueue.poNumber);
+  }).catch(function (err) {
+    btn.disabled = false;
+    showFatalError(err);
+  });
 }
 
 function toggleExtraBendingEntry(extraKey, completed, useFromInventory) {

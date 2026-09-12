@@ -92,6 +92,13 @@ function resolveExtraInventoryModel(orderModelName, details) {
 // automatic, since the part's already accounted for via that bending task
 // either way. Independent of the extra-sheet's raw stock deduction below,
 // which always happens since a sheet really was cut regardless.
+//
+// AddedToInventory (JSON { "<partName-or-'main'>": true }) records which
+// part(s) from this log have already been posted - checked here so the
+// second-chance "Add to Extra Part Inventory" button in Bending Stage
+// (addExtraToInventoryNow) knows not to double-post one already added here.
+// 'main' is the key for an extra-part log (always exactly one part); an
+// extra-sheet log uses the actual partName since it can log several.
 function addCuttingExtra(payload) {
   var order = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!order) {
@@ -101,24 +108,20 @@ function addCuttingExtra(payload) {
     throw new Error('Unknown extra type: ' + payload.type);
   }
   var extraId = generateId('EX');
-  appendRow('CuttingExtras', {
-    ExtraId: extraId,
-    PoNumber: payload.poNumber,
-    Type: payload.type,
-    Details: JSON.stringify(payload.details || {}),
-    Timestamp: nowIso()
-  });
-
   var details = payload.details || {};
   var addToInventory = !!payload.addToInventory;
+  var addedMap = {};
+
   if (payload.type === 'extra-sheet') {
     if (addToInventory) {
       var partsProduced = details.partsProduced || {};
       Object.keys(partsProduced).forEach(function (partName) {
         addToExtraPartInventory(order.ModelName, partName, '', Number(partsProduced[partName]) || 0);
+        addedMap[partName] = true;
       });
     }
-    // one scrap/extra sheet was physically consumed
+    // one scrap/extra sheet was physically consumed - independent of the
+    // inventory choice, a real sheet was cut either way
     try {
       applySheetStockDelta(
         details.width, details.height, details.thickness,
@@ -130,9 +133,75 @@ function addCuttingExtra(payload) {
   } else if (addToInventory) {
     var inventoryModel = resolveExtraInventoryModel(order.ModelName, details);
     addToExtraPartInventory(inventoryModel, details.partName, details.size || '', Number(details.qty) || 0);
+    addedMap.main = true;
   }
 
+  appendRow('CuttingExtras', {
+    ExtraId: extraId,
+    PoNumber: payload.poNumber,
+    Type: payload.type,
+    Details: JSON.stringify(details),
+    Timestamp: nowIso(),
+    AddedToInventory: JSON.stringify(addedMap)
+  });
+
   return { extraId: extraId };
+}
+
+// The Bending Stage "second chance" action: post a logged extra (or one
+// part of an extra-sheet log) to the Leftover Ledger now, for whoever
+// didn't check "Also add to Extra Part Inventory" at logging time. extraKey
+// matches getExtraBendingEntries' own key shape - the bare ExtraId for an
+// extra-part log, or "ExtraId:partName" for one part of an extra-sheet log.
+// Refuses if that specific part was already added (either at logging time
+// or via a previous call here) - AddedToInventory is the single source of
+// truth either way, so the two paths can never double-post the same part.
+function addExtraToInventoryNow(payload) {
+  var poNumber = String(payload.poNumber || '');
+  var extraKey = String(payload.extraKey || '');
+  var sepIdx = extraKey.indexOf(':');
+  var extraId = sepIdx === -1 ? extraKey : extraKey.substring(0, sepIdx);
+  var partNameFromKey = sepIdx === -1 ? null : extraKey.substring(sepIdx + 1);
+
+  var extraRow = findRow('CuttingExtras', function (r) {
+    return String(r.PoNumber) === poNumber && String(r.ExtraId) === extraId;
+  });
+  if (!extraRow) {
+    throw new Error('Logged extra not found: ' + extraKey);
+  }
+  var order = findRowById('Orders', 'PoNumber', poNumber);
+  if (!order) {
+    throw new Error('PO not found: ' + poNumber);
+  }
+
+  var addedMap = parseJsonSafe(extraRow.AddedToInventory, {});
+  var mapKey = partNameFromKey || 'main';
+  if (addedMap[mapKey]) {
+    throw new Error('Already added to Extra Part Inventory.');
+  }
+
+  var d = parseJsonSafe(extraRow.Details, {});
+  var partName, qty, size, inventoryModel;
+  if (extraRow.Type === 'extra-part') {
+    partName = d.partName;
+    qty = Number(d.qty) || 0;
+    size = d.size || '';
+    inventoryModel = resolveExtraInventoryModel(order.ModelName, d);
+  } else if (extraRow.Type === 'extra-sheet' && partNameFromKey) {
+    var produced = d.partsProduced || {};
+    partName = partNameFromKey;
+    qty = Number(produced[partNameFromKey]) || 0;
+    size = '';
+    inventoryModel = order.ModelName;
+  }
+  if (!partName || !(qty > 0)) {
+    throw new Error('Nothing to add for ' + extraKey);
+  }
+
+  addToExtraPartInventory(inventoryModel, partName, size, qty);
+  addedMap[mapKey] = true;
+  writeRowUpdates('CuttingExtras', extraRow._rowIndex, { AddedToInventory: JSON.stringify(addedMap) });
+  return { extraKey: extraKey, added: true };
 }
 
 function listExtraPartInventory() {
@@ -182,7 +251,8 @@ function listCuttingExtras(poNumber) {
         poNumber: String(r.PoNumber),
         type: r.Type,
         details: parseJsonSafe(r.Details, {}),
-        timestamp: r.Timestamp
+        timestamp: r.Timestamp,
+        addedToInventory: parseJsonSafe(r.AddedToInventory, {})
       };
     })
     .sort(function (a, b) { return a.timestamp < b.timestamp ? -1 : 1; });

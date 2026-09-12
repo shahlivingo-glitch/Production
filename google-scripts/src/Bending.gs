@@ -40,6 +40,7 @@ function getExtraBendingEntries(poNumber, order) {
   var entries = [];
   listCuttingExtras(poNumber).forEach(function (r) {
     var d = r.details || {};
+    var addedMap = r.addedToInventory || {};
     if (r.type === 'extra-part') {
       if (!d.partName || !(Number(d.qty) > 0)) return;
       var key = r.extraId;
@@ -54,7 +55,8 @@ function getExtraBendingEntries(poNumber, order) {
         sheetLabel: d.sourceSheetLabel || 'Extra part',
         unlocked: true,
         done: done,
-        leftoverAvailable: done ? 0 : getExtraPartInventoryQty(inventoryModel, d.partName, d.size || '')
+        leftoverAvailable: done ? 0 : getExtraPartInventoryQty(inventoryModel, d.partName, d.size || ''),
+        alreadyInInventory: !!addedMap.main
       });
     } else if (r.type === 'extra-sheet') {
       var produced = d.partsProduced || {};
@@ -72,7 +74,8 @@ function getExtraBendingEntries(poNumber, order) {
           sheetLabel: 'Extra Sheet Cut',
           unlocked: true,
           done: done,
-          leftoverAvailable: done ? 0 : getExtraPartInventoryQty(order.ModelName, partName, '')
+          leftoverAvailable: done ? 0 : getExtraPartInventoryQty(order.ModelName, partName, ''),
+          alreadyInInventory: !!addedMap[partName]
         });
       });
     }

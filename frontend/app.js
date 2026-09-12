@@ -264,18 +264,31 @@ function computeSheetPlanClient(sheets, qty, decisions, physicalOverrides) {
       };
     });
 
-    // Binding row = highest floor; when tied, prefer one with a remainder
-    // (that's the row that needs a decision).
-    var baseSheets = outputs.length === 0 ? qty : 0;
+    // sheet.qty (Cutting Configuration's own "Sheet Qty" field) is a fixed
+    // total for ONE instance of this plan (1 unit for per-unit, one Base Qty
+    // batch for Bulk) - when set, it replaces the whole outputs-derived
+    // floor/max calculation below, scaled by the same qty every other row
+    // already scales by. No remainder/decision concept applies since no
+    // per-output yield math is driving the count anymore. physicalOverrides
+    // (Orders.SheetQtyOverrides) can still override this per-PO.
+    var directQtyPerInstance = Number(sheet.qty) || 0;
+    var baseSheets;
     var binding = null;
-    rows.forEach(function (r) {
-      if (r.floorSheets > baseSheets) baseSheets = r.floorSheets;
-    });
-    rows.forEach(function (r) {
-      if (r.floorSheets === baseSheets && (!binding || (r.remainder > 0 && binding.remainder === 0))) {
-        binding = r;
-      }
-    });
+    if (directQtyPerInstance > 0) {
+      baseSheets = directQtyPerInstance * qty;
+    } else {
+      // Binding row = highest floor; when tied, prefer one with a remainder
+      // (that's the row that needs a decision).
+      baseSheets = outputs.length === 0 ? qty : 0;
+      rows.forEach(function (r) {
+        if (r.floorSheets > baseSheets) baseSheets = r.floorSheets;
+      });
+      rows.forEach(function (r) {
+        if (r.floorSheets === baseSheets && (!binding || (r.remainder > 0 && binding.remainder === 0))) {
+          binding = r;
+        }
+      });
+    }
 
     var decisionKey = null;
     var bindingRemainder = 0;

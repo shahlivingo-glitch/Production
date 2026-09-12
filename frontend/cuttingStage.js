@@ -364,7 +364,7 @@ function renderStatusPill() {
 
 function cloneSheets(sheets) {
   return (sheets || []).map(function (s) {
-    return {
+    var sheet = {
       width: s.width !== undefined ? s.width : '',
       height: s.height !== undefined ? s.height : '',
       thickness: s.thickness !== undefined ? s.thickness : '',
@@ -373,6 +373,12 @@ function cloneSheets(sheets) {
         if (o.isExtra) {
           out.isExtra = true;
           out.size = o.size || '';
+        } else if (o.size) {
+          // A one-time size set on a regular part (handlePartSizeChange's
+          // "just this PO" path) - must survive round-tripping through this
+          // working copy too, not just saveNewVersion's own serialization,
+          // or it silently vanishes the next time this PO is reopened.
+          out.size = o.size;
         }
         if (o.multiYield) {
           out.multiYield = true;
@@ -381,6 +387,13 @@ function cloneSheets(sheets) {
         return out;
       })
     };
+    // Cutting Configuration's "Sheet Qty" - a fixed sheets-needed total set
+    // on the plan itself. Not editable here, but must be preserved through
+    // this working copy so saveNewVersion doesn't silently drop it.
+    if (s.qty !== undefined && s.qty !== null && s.qty !== '' && Number(s.qty) > 0) {
+      sheet.qty = s.qty;
+    }
+    return sheet;
   });
 }
 
@@ -1054,7 +1067,7 @@ function saveNewVersion() {
     return;
   }
   var sheets = workingSheets.map(function (s) {
-    return {
+    var sheetOut = {
       width: Number(s.width) || 0,
       height: Number(s.height) || 0,
       thickness: Number(s.thickness) || 0,
@@ -1076,6 +1089,12 @@ function saveNewVersion() {
         return out;
       })
     };
+    // Not editable from Cutting Stage, but must not be silently dropped if
+    // Cutting Configuration set it - see cloneSheets.
+    if (Number(s.qty) > 0) {
+      sheetOut.qty = Number(s.qty);
+    }
+    return sheetOut;
   });
 
   setPlanSaveStatus('Saving…', 'saving');

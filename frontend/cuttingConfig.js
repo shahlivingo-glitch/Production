@@ -287,6 +287,7 @@ function selectPlan(planName) {
           width: s.width !== undefined ? s.width : '',
           height: s.height !== undefined ? s.height : '',
           thickness: s.thickness !== undefined ? s.thickness : '',
+          qty: s.qty !== undefined && s.qty !== 0 ? s.qty : '',
           outputs: (s.outputs || []).map(function (o) {
             return {
               partName: o.partName || '',
@@ -385,7 +386,7 @@ function saveModel() {
     partsPerUnit[p.name] = p.size ? { qty: p.total, size: p.size } : p.total;
   });
   var sheets = configState.sheets.map(function (s) {
-    return {
+    var sheetOut = {
       width: Number(s.width) || 0,
       height: Number(s.height) || 0,
       thickness: Number(s.thickness) || 0,
@@ -398,6 +399,10 @@ function saveModel() {
         return out;
       })
     };
+    if (Number(s.qty) > 0) {
+      sheetOut.qty = Number(s.qty);
+    }
+    return sheetOut;
   });
   Promise.all([
     apiPost('saveModelParts', {
@@ -630,7 +635,16 @@ function buildSheetCard(sheet, sheetIndex) {
   dims.appendChild(buildDimField('T', sheet.thickness, function (v) {
     configState.sheets[sheetIndex].thickness = v;
   }));
+  dims.appendChild(buildDimField('Qty', sheet.qty, function (v) {
+    configState.sheets[sheetIndex].qty = v;
+  }));
   card.appendChild(dims);
+
+  var qtyHint = document.createElement('div');
+  qtyHint.className = 'section-hint';
+  qtyHint.style.marginTop = '-8px';
+  qtyHint.textContent = 'Qty is optional - a fixed number of sheets needed for 1 unit (or 1 Base Qty batch for Bulk). Leave blank to calculate it automatically from the parts below instead.';
+  card.appendChild(qtyHint);
 
   sheet.outputs.forEach(function (output, outputIndex) {
     card.appendChild(buildOutputRow(sheet, sheetIndex, output, outputIndex));
