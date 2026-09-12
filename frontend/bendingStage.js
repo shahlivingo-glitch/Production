@@ -179,6 +179,21 @@ function buildUseInventoryCheckbox(entry) {
   return wrap;
 }
 
+// entry.qty is the per-sheet rate as configured in the plan (e.g. "4" for
+// Shelf) - not how many actually need bending for this PO. entry.totalQty
+// (qty x however many of that sheet-type are actually being/were cut,
+// honoring any SheetQtyOverride - see getBendingQueueForOrder) is the real
+// count. For an extra-derived entry the two are already equal (a logged
+// extra has no separate per-sheet rate), so the "(N/sheet)" detail only
+// shows when it's actually informative.
+function formatBendingQtyText(entry) {
+  var total = entry.totalQty !== undefined ? entry.totalQty : entry.qty;
+  if (total !== entry.qty) {
+    return total + ' <span class="muted">(' + entry.qty + '/sheet)</span>';
+  }
+  return String(total);
+}
+
 function buildBendingEntryCard(entry) {
   var card = document.createElement('div');
   card.className = 'cs-sheet-card' + (entry.done ? ' done' : '');
@@ -193,7 +208,7 @@ function buildBendingEntryCard(entry) {
 
   var text = document.createElement('span');
   var sizeTag = entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '';
-  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + entry.qty + ' <span class="muted">— from ' + entry.sheetLabel + '</span>';
+  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + formatBendingQtyText(entry) + ' <span class="muted">— from ' + entry.sheetLabel + '</span>';
 
   label.appendChild(checkbox);
   label.appendChild(text);
@@ -278,7 +293,7 @@ function buildExtraBendingEntryCard(entry) {
 
   var text = document.createElement('span');
   var sizeTag = entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '';
-  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + entry.qty + ' <span class="muted">— ' + entry.sheetLabel + '</span>';
+  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + formatBendingQtyText(entry) + ' <span class="muted">— ' + entry.sheetLabel + '</span>';
 
   label.appendChild(checkbox);
   label.appendChild(text);

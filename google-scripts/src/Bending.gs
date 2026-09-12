@@ -46,10 +46,12 @@ function getExtraBendingEntries(poNumber, order) {
       var key = r.extraId;
       var done = !!completion[key];
       var inventoryModel = resolveExtraInventoryModel(order.ModelName, d);
+      var qtyVal = Number(d.qty) || 0;
       entries.push({
         extraKey: key,
         partName: d.partName,
-        qty: Number(d.qty) || 0,
+        qty: qtyVal,
+        totalQty: qtyVal, // already a flat logged total - no per-sheet rate to scale
         isExtra: !!d.isExtra,
         size: d.size || '',
         sheetLabel: d.sourceSheetLabel || 'Extra part',
@@ -69,6 +71,7 @@ function getExtraBendingEntries(poNumber, order) {
           extraKey: key,
           partName: partName,
           qty: qty,
+          totalQty: qty, // already a flat logged total - no per-sheet rate to scale
           isExtra: false,
           size: '',
           sheetLabel: 'Extra Sheet Cut',
@@ -92,6 +95,19 @@ function getBendingQueueForOrder(poNumber) {
   var sheetCompletion = parseJsonSafe(order.SheetCompletion, []);
   var bendingCompletion = parseJsonSafe(order.BendingCompletion, []);
 
+  // entry.qty (from flattenPlanOutputs) is the per-sheet rate as configured
+  // in the plan (e.g. "4" for Shelf) - not how many actually come out of
+  // cutting for this PO. That's qty x however many of that sheet-type are
+  // actually being/were cut (its real physicalSheets, honoring any
+  // SheetQtyOverride) - the exact same math Cutting Stage's own output rows
+  // use. Computed once per sheet-type here, then applied per entry below.
+  var sheetPlan = computeOrderSheetPlan(
+    sheets,
+    getOrderSheetMultiplier(order),
+    parseJsonSafe(order.MultiYieldDecisions, {}),
+    sanitizeSheetQtyOverrides(parseJsonSafe(order.SheetQtyOverrides, {}), sheets.length)
+  );
+
   var entries = flattenPlanOutputs(sheets).map(function (entry, index) {
     // Non-extra parts only - mirrors applyCutStockAndLedger's own scoping
     // (extras never auto-post to/draw from the ledger). Live lookup each
@@ -100,12 +116,14 @@ function getBendingQueueForOrder(poNumber) {
     var leftoverAvailable = (!entry.isExtra && !bendingCompletion[index])
       ? getExtraPartInventoryQty(order.ModelName, entry.partName, '')
       : 0;
+    var physicalSheetsForThisSheet = (sheetPlan[entry.sheetIndex] && sheetPlan[entry.sheetIndex].physicalSheets) || 0;
     return {
       index: index,
       sheetIndex: entry.sheetIndex,
       sheetLabel: sheetLabelForBending(sheets[entry.sheetIndex], entry.sheetIndex),
       partName: entry.partName,
       qty: entry.qty,
+      totalQty: entry.qty * physicalSheetsForThisSheet,
       isExtra: entry.isExtra,
       size: entry.size,
       unlocked: !!sheetCompletion[entry.sheetIndex],
