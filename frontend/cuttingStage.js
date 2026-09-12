@@ -803,39 +803,16 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
   row.appendChild(totalSpan);
   row.appendChild(removeBtn);
 
-  var myRow = document.createElement('div');
-  myRow.className = 'multi-yield-row';
-  var myLabel = document.createElement('label');
-  myLabel.className = 'multi-yield-toggle';
-  var myCb = document.createElement('input');
-  myCb.type = 'checkbox';
-  myCb.checked = !!output.multiYield;
-  myCb.addEventListener('change', function (e) {
-    workingSheets[sheetIndex].outputs[outputIndex].multiYield = e.target.checked;
-    markDirty();
-    renderPlanTab();
-  });
-  myLabel.appendChild(myCb);
-  myLabel.appendChild(document.createTextNode(' Multi-yield (one sheet cuts many)'));
-  myRow.appendChild(myLabel);
-  if (output.multiYield) {
-    var yieldInput = document.createElement('input');
-    yieldInput.type = 'number';
-    yieldInput.min = '1';
-    yieldInput.placeholder = 'pcs per sheet';
-    yieldInput.title = 'TOTAL pieces from one physical sheet (the whole count, not "extra")';
-    yieldInput.style.width = '110px';
-    yieldInput.value = output.yieldPerSheet !== undefined ? output.yieldPerSheet : '';
-    yieldInput.addEventListener('input', function (e) {
-      workingSheets[sheetIndex].outputs[outputIndex].yieldPerSheet = e.target.value;
-    });
-    yieldInput.addEventListener('change', function () { markDirty(); renderPlanTab(); });
-    myRow.appendChild(yieldInput);
-  }
+  // The Multi-yield (one sheet cuts many) toggle + pcs-per-sheet input used
+  // to be editable here too, mirroring Cutting Configuration's own output
+  // row. Removed from Cutting Stage - that's a config-time decision now,
+  // made once in Cutting Configuration, not something to flip ad hoc during
+  // production. Existing multi-yield outputs (output.multiYield/
+  // yieldPerSheet, set via Cutting Config) are untouched and keep working
+  // exactly as before - this only removes the ability to toggle it here.
 
   var container = document.createElement('div');
   container.appendChild(row);
-  container.appendChild(myRow);
 
   // Purely informational - doesn't change this row's math at all, just
   // flags that some of this part is already sitting cut from a previous
