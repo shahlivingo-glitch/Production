@@ -499,6 +499,35 @@ function saveSheetQtyOverride(sheetIndex, rawValue) {
   }).catch(showFatalError);
 }
 
+// The per-sheet card's own "Save" button - persists sheetIndex's current
+// W/H/T + part-output values (workingSheets already reflects every live
+// edit, same as toggleSheetComplete's sheetData) right now, independent of
+// "Save as New Plan Version" or waiting until this sheet is marked done.
+function saveSheetFields(sheetIndex, btn) {
+  if (!canEdit('cuttingStage')) {
+    showFatalError('View only - ask an admin for edit access to change this.');
+    return;
+  }
+  if (btn) btn.disabled = true;
+  apiPost('saveSheetData', {
+    poNumber: currentOrder.poNumber,
+    sheetIndex: sheetIndex,
+    sheetData: workingSheets[sheetIndex]
+  }).then(function (result) {
+    if (!result.ok) {
+      if (btn) btn.disabled = false;
+      showFatalError(result.error);
+      return;
+    }
+    currentOrder = result.data;
+    renderPlanTab();
+    setPlanSaveStatus('Sheet ' + (sheetIndex + 1) + ' saved', '');
+  }).catch(function (err) {
+    if (btn) btn.disabled = false;
+    showFatalError(err);
+  });
+}
+
 function selectTab(tab) {
   document.querySelectorAll('.cs-tab-btn').forEach(function (btn) {
     btn.classList.toggle('selected', btn.dataset.tab === tab);
@@ -584,12 +613,28 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   titleWrap.appendChild(doneCheckbox);
   titleWrap.appendChild(title);
 
+  header.appendChild(titleWrap);
+
+  // Persists this one sheet's current W/H/T + part-output values right now -
+  // independent of "Save as New Plan Version" (which resets every sheet's
+  // completion/status) and of marking this sheet done (which saves it too,
+  // but only at that moment). Hidden once done: its data is already locked
+  // in from whatever stock/ledger booked against it.
+  if (!done && canEdit('cuttingStage')) {
+    var saveSheetBtn = document.createElement('button');
+    saveSheetBtn.type = 'button';
+    saveSheetBtn.className = 'btn-secondary';
+    saveSheetBtn.textContent = 'Save';
+    saveSheetBtn.title = "Save this sheet's changes now";
+    saveSheetBtn.addEventListener('click', function () { saveSheetFields(sheetIndex, saveSheetBtn); });
+    header.appendChild(saveSheetBtn);
+  }
+
   var removeBtn = document.createElement('button');
   removeBtn.className = 'icon-btn';
   removeBtn.textContent = '×';
   removeBtn.title = 'Remove sheet';
   removeBtn.addEventListener('click', function () { removeSheet(sheetIndex); });
-  header.appendChild(titleWrap);
   header.appendChild(removeBtn);
   card.appendChild(header);
 

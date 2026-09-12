@@ -304,6 +304,37 @@ function setSheetComplete(payload) {
   return getOrder(payload.poNumber);
 }
 
+// A per-sheet "Save" button on the Cutting Plan card - lets the operator
+// persist just this one sheet's W/H/T and part-output edits immediately,
+// without needing "Save as New Plan Version" (which resets every sheet's
+// completion/status - a much bigger, structural action) or waiting until
+// marking the sheet done (setSheetComplete does this same persistence too,
+// but only at that moment - see persistOrderActiveSheets). Refused once the
+// sheet is already marked done, same as setSheetQtyOverride below: its data
+// is locked in from whatever stock/ledger already booked against it.
+function saveSheetData(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var idx = Number(payload.sheetIndex);
+  if (idx < 0 || isNaN(idx)) {
+    throw new Error('Invalid sheet index');
+  }
+  var sheets = getOrderActiveSheets(row);
+  if (idx >= sheets.length) {
+    throw new Error('Invalid sheet index');
+  }
+  var completion = parseJsonSafe(row.SheetCompletion, []);
+  if (completion[idx]) {
+    throw new Error('This sheet is already marked done - its cut data is locked in.');
+  }
+
+  sheets[idx] = payload.sheetData || {};
+  persistOrderActiveSheets(row, sheets);
+  return getOrder(payload.poNumber);
+}
+
 // Lets the operator adjust a sheet's planned cut count directly from its
 // Cutting Plan card, independent of (and ahead of) marking it done - that's
 // still a separate, later confirmation via setSheetComplete's
