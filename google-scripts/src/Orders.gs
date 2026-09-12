@@ -257,6 +257,57 @@ function setSheetComplete(payload) {
   return getOrder(payload.poNumber);
 }
 
+// Lets the operator adjust a sheet's planned cut count directly from its
+// Cutting Plan card, independent of (and ahead of) marking it done - that's
+// still a separate, later confirmation via setSheetComplete's
+// actualSheetsCut, which pre-fills from whatever's set here. payload.value
+// blank/null clears the override back to the calculated default. Refused
+// once the sheet is already marked done: stock/ledger were already computed
+// from whatever number was locked in at that moment, and this must never
+// silently diverge from it - correcting stock after the fact is a separate,
+// explicit Raw Sheet Stock adjustment instead.
+function setSheetQtyOverride(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var idx = Number(payload.sheetIndex);
+  if (idx < 0 || isNaN(idx)) {
+    throw new Error('Invalid sheet index');
+  }
+  var sheets = getOrderActiveSheets(row);
+  if (idx >= sheets.length) {
+    throw new Error('Invalid sheet index');
+  }
+  var completion = parseJsonSafe(row.SheetCompletion, []);
+  if (completion[idx]) {
+    throw new Error('This sheet is already marked done - its actual cut count is locked in.');
+  }
+
+  var overrides = sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), sheets.length);
+  if (payload.value === '' || payload.value === null || payload.value === undefined) {
+    delete overrides[String(idx)];
+  } else {
+    var v = Number(payload.value);
+    if (isNaN(v) || v < 0) {
+      throw new Error('Enter a valid sheet count (0 or more)');
+    }
+    overrides[String(idx)] = v;
+  }
+
+  var decisions = parseJsonSafe(row.MultiYieldDecisions, {});
+  var total = 0;
+  computeOrderSheetPlan(sheets, getOrderSheetMultiplier(row), decisions, overrides).forEach(function (s) {
+    total += s.physicalSheets;
+  });
+
+  writeRowUpdates('Orders', row._rowIndex, {
+    SheetQtyOverrides: JSON.stringify(overrides),
+    TotalSheetsRequired: total
+  });
+  return getOrder(payload.poNumber);
+}
+
 function markAllSheetsComplete(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {

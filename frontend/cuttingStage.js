@@ -444,6 +444,29 @@ function toggleSheetComplete(sheetIndex, completed, actualSheetsCut) {
   }).catch(showFatalError);
 }
 
+// Adjusts a not-yet-done sheet's planned/actual cut count directly from its
+// card - independent of marking it done. Blank clears back to the
+// calculated default. Refused server-side once the sheet is already marked
+// done (setSheetQtyOverride) - editing here is for getting the number right
+// ahead of cutting, not for retroactively changing what stock/ledger already
+// booked at mark-done time.
+function saveSheetQtyOverride(sheetIndex, rawValue) {
+  if (!canEdit('cuttingStage')) {
+    showFatalError('View only - ask an admin for edit access to change this.');
+    renderPlanTab();
+    return;
+  }
+  apiPost('setSheetQtyOverride', {
+    poNumber: currentOrder.poNumber,
+    sheetIndex: sheetIndex,
+    value: rawValue
+  }).then(function (result) {
+    if (!result.ok) return showFatalError(result.error);
+    currentOrder = result.data;
+    renderPlanTab();
+  }).catch(showFatalError);
+}
+
 function selectTab(tab) {
   document.querySelectorAll('.cs-tab-btn').forEach(function (btn) {
     btn.classList.toggle('selected', btn.dataset.tab === tab);
@@ -547,14 +570,52 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
 
   var multiplier = getCurrentOrderSheetMultiplier();
   var isBulk = currentOrder.planType === 'bulk';
-  var totalLine = document.createElement('div');
-  totalLine.className = 'cs-sheet-total-line';
   var anyMulti = sheetPlan && sheetPlan.rows.some(function (r) { return r.multiYield; });
-  totalLine.textContent = (sheetPlan && anyMulti)
+  var plannedText = (sheetPlan && anyMulti)
     ? 'Physical sheets to cut for this PO: ' + sheetPlan.physicalSheets
     : (isBulk
         ? 'Sheets needed: 1 per batch × ' + multiplier + '× = ' + multiplier + ' total (Bulk ×' + currentOrder.bulkBaseQty + ')'
         : 'Sheets needed: 1 per unit × ' + multiplier + ' = ' + multiplier + ' total');
+
+  var totalLine = document.createElement('div');
+  totalLine.className = 'cs-sheet-total-line';
+
+  var plannedSpan = document.createElement('span');
+  plannedSpan.textContent = plannedText;
+  totalLine.appendChild(plannedSpan);
+
+  // Editable right here, ahead of actually cutting - separate from (but
+  // feeding into) the "Sheets actually cut" prompt shown when marking this
+  // sheet done, which pre-fills from whatever's set here. Once the sheet is
+  // done, stock/ledger are already computed from the locked-in number, so
+  // it's shown read-only instead of editable to avoid implying a later edit
+  // here would retroactively fix them.
+  if (sheetPlan) {
+    if (done) {
+      var lockedSpan = document.createElement('span');
+      lockedSpan.className = 'cs-actual-cut-locked';
+      lockedSpan.textContent = (sheetPlan.overridden ? 'Actual cut: ' : 'Cut: ') + sheetPlan.physicalSheets;
+      totalLine.appendChild(lockedSpan);
+    } else {
+      var actualWrap = document.createElement('span');
+      actualWrap.className = 'cs-actual-cut-wrap';
+      var actualLabel = document.createElement('span');
+      actualLabel.textContent = 'Actual cut:';
+      actualWrap.appendChild(actualLabel);
+      var actualInput = document.createElement('input');
+      actualInput.type = 'number';
+      actualInput.min = '0';
+      actualInput.className = 'cs-actual-cut-input';
+      actualInput.disabled = !canEdit('cuttingStage');
+      actualInput.title = 'Adjust the planned sheet count ahead of cutting - optional, and can still be confirmed or changed again when marking this sheet done';
+      actualInput.value = sheetPlan.physicalSheets;
+      actualInput.addEventListener('change', function (e) {
+        saveSheetQtyOverride(sheetIndex, e.target.value);
+      });
+      actualWrap.appendChild(actualInput);
+      totalLine.appendChild(actualWrap);
+    }
+  }
   card.appendChild(totalLine);
 
   sheet.outputs.forEach(function (output, outputIndex) {

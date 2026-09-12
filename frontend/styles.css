@@ -591,10 +591,34 @@ a { color: var(--color-accent); }
 }
 
 .cs-sheet-total-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   font-size: 12px;
   color: var(--color-muted-foreground);
   margin-bottom: var(--space-2);
   font-variant-numeric: tabular-nums;
+}
+
+.cs-actual-cut-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.cs-actual-cut-input {
+  width: 60px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.cs-actual-cut-locked {
+  font-weight: 700;
+  color: var(--color-primary);
 }
 
 .cs-output-row, .output-row {
