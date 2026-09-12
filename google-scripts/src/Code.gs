@@ -103,6 +103,7 @@ var ACTION_MENUS = {
   pendingBendingOrders: ['bendingStage', 'view'],
   bendingQueueForOrder: ['bendingStage', 'view'],
   setBendingComplete: ['bendingStage', 'edit'],
+  setExtraBendingComplete: ['bendingStage', 'edit'],
   markAllBendingComplete: ['bendingStage', 'edit'],
 
   // Extra Part Inventory (view-only page - no edit actions exist for it)
@@ -200,6 +201,7 @@ var POST_ACTIONS = {
   setActivePlanVersionForOrder: function (b) { return setActivePlanVersionForOrder(b); },
   addCuttingExtra: function (b) { return addCuttingExtra(b); },
   setBendingComplete: function (b) { return setBendingComplete(b); },
+  setExtraBendingComplete: function (b) { return setExtraBendingComplete(b); },
   markAllBendingComplete: function (b) { return markAllBendingComplete(b); },
   setMultiYieldDecision: function (b) { return setMultiYieldDecision(b); },
   receiveSheetStock: function (b) { return receiveSheetStock(b); },

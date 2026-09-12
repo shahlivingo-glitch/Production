@@ -78,6 +78,20 @@ function consumeExtraPartInventory(modelName, partName, size, qty) {
   return consumed;
 }
 
+// Which ExtraPartInventory "model" bucket a logged extra part belongs to -
+// shared between addCuttingExtra (posting to it) and the Bending queue
+// (checking/consuming it), so both always agree on the same ledger row.
+function resolveExtraInventoryModel(orderModelName, details) {
+  if (!details.isExtra) return orderModelName;
+  return details.isUniversal ? UNIVERSAL_MODEL_TAG : (details.modelName || orderModelName);
+}
+
+// payload.addToInventory: whether this logged extra should ALSO be posted
+// to the Leftover Ledger, on top of becoming its own Bending task (see
+// getExtraBendingEntries in Bending.gs) - an explicit choice now, not
+// automatic, since the part's already accounted for via that bending task
+// either way. Independent of the extra-sheet's raw stock deduction below,
+// which always happens since a sheet really was cut regardless.
 function addCuttingExtra(payload) {
   var order = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!order) {
@@ -96,11 +110,14 @@ function addCuttingExtra(payload) {
   });
 
   var details = payload.details || {};
+  var addToInventory = !!payload.addToInventory;
   if (payload.type === 'extra-sheet') {
-    var partsProduced = details.partsProduced || {};
-    Object.keys(partsProduced).forEach(function (partName) {
-      addToExtraPartInventory(order.ModelName, partName, '', Number(partsProduced[partName]) || 0);
-    });
+    if (addToInventory) {
+      var partsProduced = details.partsProduced || {};
+      Object.keys(partsProduced).forEach(function (partName) {
+        addToExtraPartInventory(order.ModelName, partName, '', Number(partsProduced[partName]) || 0);
+      });
+    }
     // one scrap/extra sheet was physically consumed
     try {
       applySheetStockDelta(
@@ -110,11 +127,8 @@ function addCuttingExtra(payload) {
     } catch (err) {
       // best-effort: never block logging the extra
     }
-  } else {
-    var inventoryModel = order.ModelName;
-    if (details.isExtra) {
-      inventoryModel = details.isUniversal ? UNIVERSAL_MODEL_TAG : (details.modelName || order.ModelName);
-    }
+  } else if (addToInventory) {
+    var inventoryModel = resolveExtraInventoryModel(order.ModelName, details);
     addToExtraPartInventory(inventoryModel, details.partName, details.size || '', Number(details.qty) || 0);
   }
 

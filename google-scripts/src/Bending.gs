@@ -26,6 +26,60 @@ function sheetLabelForBending(sheet, sheetIndex) {
   return label;
 }
 
+// Extra parts logged during cutting (CuttingExtras) become their own
+// Bending tasks too, alongside the plan's own entries - a positional array
+// can't represent these since they're logged after the plan is fixed and
+// can arrive at any time, so completion is tracked by a stable string key
+// (the CuttingExtras row's own ExtraId, or "ExtraId:partName" for one of an
+// extra-sheet log's several parts) in Orders.ExtraBendingCompletion instead.
+// Always unlocked (true) - unlike a plan sheet, there's no separate "wait
+// for cutting" gate: the part was already physically cut by the time it was
+// logged as an extra.
+function getExtraBendingEntries(poNumber, order) {
+  var completion = parseJsonSafe(order.ExtraBendingCompletion, {});
+  var entries = [];
+  listCuttingExtras(poNumber).forEach(function (r) {
+    var d = r.details || {};
+    if (r.type === 'extra-part') {
+      if (!d.partName || !(Number(d.qty) > 0)) return;
+      var key = r.extraId;
+      var done = !!completion[key];
+      var inventoryModel = resolveExtraInventoryModel(order.ModelName, d);
+      entries.push({
+        extraKey: key,
+        partName: d.partName,
+        qty: Number(d.qty) || 0,
+        isExtra: !!d.isExtra,
+        size: d.size || '',
+        sheetLabel: d.sourceSheetLabel || 'Extra part',
+        unlocked: true,
+        done: done,
+        leftoverAvailable: done ? 0 : getExtraPartInventoryQty(inventoryModel, d.partName, d.size || '')
+      });
+    } else if (r.type === 'extra-sheet') {
+      var produced = d.partsProduced || {};
+      Object.keys(produced).forEach(function (partName) {
+        var qty = Number(produced[partName]) || 0;
+        if (!(qty > 0)) return;
+        var key = r.extraId + ':' + partName;
+        var done = !!completion[key];
+        entries.push({
+          extraKey: key,
+          partName: partName,
+          qty: qty,
+          isExtra: false,
+          size: '',
+          sheetLabel: 'Extra Sheet Cut',
+          unlocked: true,
+          done: done,
+          leftoverAvailable: done ? 0 : getExtraPartInventoryQty(order.ModelName, partName, '')
+        });
+      });
+    }
+  });
+  return entries;
+}
+
 function getBendingQueueForOrder(poNumber) {
   var order = findRowById('Orders', 'PoNumber', poNumber);
   if (!order) {
@@ -65,20 +119,22 @@ function getBendingQueueForOrder(poNumber) {
     partyName: order.PartyName || '',
     cuttingStatus: order.CuttingStatus || 'pending',
     entries: entries,
+    extraEntries: getExtraBendingEntries(poNumber, order),
     bendingStatus: order.BendingStatus || 'pending'
   };
 }
 
 // Best-effort: pull an entry's need from the Leftover Ledger instead of
-// leaving that surplus sitting unused, the moment it's newly marked done
-// (never for one that was already done - only a genuine not-done -> done
-// transition, so a bulk "mark all" on an order with older, already-bent
-// entries never retroactively consumes stock for parts that had nothing to
-// do with this completion). Guarded by BendingLeftoverConsumed too, mirroring
-// SheetStockConsumed, so re-checking an entry never double-consumes. Extras
-// are skipped - they never auto-post to/draw from the ledger either way.
-function consumeBendingLeftoverIfNew(row, entry, idx, wasDone, consumedMap) {
-  if (wasDone || consumedMap[String(idx)] || entry.isExtra || !entry.partName) return;
+// leaving that surplus sitting unused - an explicit per-entry choice
+// (useFromInventory, from a checkbox next to the leftover note) rather than
+// automatic, so the operator decides whether to use existing stock or bend
+// the freshly-cut parts. Only on a genuine not-done -> done transition
+// (never retroactive for an already-done entry), guarded by
+// BendingLeftoverConsumed too so a re-check never double-consumes. Extras
+// (plan-level ones) are skipped - they never auto-post to/draw from the
+// ledger either way.
+function consumeBendingLeftoverIfRequested(row, entry, idx, wasDone, useFromInventory, consumedMap) {
+  if (wasDone || !useFromInventory || consumedMap[String(idx)] || entry.isExtra || !entry.partName) return;
   try {
     consumeExtraPartInventory(row.ModelName, entry.partName, '', Number(entry.qty) || 0);
   } catch (err) {
@@ -118,9 +174,71 @@ function setBendingComplete(payload) {
   };
   if (payload.completed) {
     var consumedMap = parseJsonSafe(row.BendingLeftoverConsumed, {});
-    consumeBendingLeftoverIfNew(row, entry, idx, wasDone, consumedMap);
+    consumeBendingLeftoverIfRequested(row, entry, idx, wasDone, !!payload.useFromInventory, consumedMap);
     updates.BendingLeftoverConsumed = JSON.stringify(consumedMap);
   }
+  writeRowUpdates('Orders', row._rowIndex, updates);
+  return getBendingQueueForOrder(payload.poNumber);
+}
+
+// Resolves a Bending extraKey back to what it needs to consume from the
+// ledger - re-reads its source CuttingExtras row, since setExtraBendingComplete
+// itself only stores the completion flag, not the part/qty.
+function resolveExtraBendingTask(poNumber, extraKey, orderModelName) {
+  var sepIdx = String(extraKey).indexOf(':');
+  var extraId = sepIdx === -1 ? String(extraKey) : String(extraKey).substring(0, sepIdx);
+  var partNameFromKey = sepIdx === -1 ? null : String(extraKey).substring(sepIdx + 1);
+  var row = findRow('CuttingExtras', function (r) {
+    return String(r.PoNumber) === String(poNumber) && String(r.ExtraId) === extraId;
+  });
+  if (!row) return null;
+  var d = parseJsonSafe(row.Details, {});
+  if (row.Type === 'extra-part') {
+    return { partName: d.partName, qty: Number(d.qty) || 0, size: d.size || '', inventoryModel: resolveExtraInventoryModel(orderModelName, d) };
+  }
+  if (row.Type === 'extra-sheet' && partNameFromKey) {
+    var produced = d.partsProduced || {};
+    return { partName: partNameFromKey, qty: Number(produced[partNameFromKey]) || 0, size: '', inventoryModel: orderModelName };
+  }
+  return null;
+}
+
+function setExtraBendingComplete(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var key = String(payload.extraKey || '');
+  if (!key) {
+    throw new Error('Invalid extra key');
+  }
+  var completion = parseJsonSafe(row.ExtraBendingCompletion, {});
+  completion[key] = !!payload.completed;
+  var updates = { ExtraBendingCompletion: JSON.stringify(completion) };
+
+  // Shares BendingLeftoverConsumed with the plan-entry path (setBendingComplete)
+  // rather than deriving "already consumed" from ExtraBendingCompletion itself -
+  // that map resets on uncheck, which would let an uncheck+recheck-with-
+  // useFromInventory double-consume. A "extra:" prefix keeps this namespace
+  // distinct from the plan entries' plain numeric-index keys (not that they
+  // could collide anyway).
+  if (payload.completed && payload.useFromInventory) {
+    var consumedMap = parseJsonSafe(row.BendingLeftoverConsumed, {});
+    var guardKey = 'extra:' + key;
+    if (!consumedMap[guardKey]) {
+      var task = resolveExtraBendingTask(payload.poNumber, key, row.ModelName);
+      if (task && task.partName && task.qty > 0) {
+        try {
+          consumeExtraPartInventory(task.inventoryModel, task.partName, task.size || '', task.qty);
+        } catch (err) {
+          // best-effort - completion must still record
+        }
+      }
+      consumedMap[guardKey] = true;
+      updates.BendingLeftoverConsumed = JSON.stringify(consumedMap);
+    }
+  }
+
   writeRowUpdates('Orders', row._rowIndex, updates);
   return getBendingQueueForOrder(payload.poNumber);
 }
@@ -134,20 +252,25 @@ function markAllBendingComplete(payload) {
   var flat = flattenPlanOutputs(sheets);
   var sheetCompletion = parseJsonSafe(row.SheetCompletion, []);
   var completion = parseJsonSafe(row.BendingCompletion, []);
-  var consumedMap = parseJsonSafe(row.BendingLeftoverConsumed, {});
 
+  // Bulk-complete never touches the Leftover Ledger - "use inventory" is an
+  // explicit, per-entry choice (see setBendingComplete/setExtraBendingComplete)
+  // with no natural per-entry UI in a single bulk action.
   flat.forEach(function (entry, idx) {
     if (sheetCompletion[entry.sheetIndex]) {
-      var wasDone = !!completion[idx];
       completion[idx] = true;
-      consumeBendingLeftoverIfNew(row, entry, idx, wasDone, consumedMap);
     }
+  });
+
+  var extraCompletion = parseJsonSafe(row.ExtraBendingCompletion, {});
+  getExtraBendingEntries(payload.poNumber, row).forEach(function (e) {
+    extraCompletion[e.extraKey] = true;
   });
 
   writeRowUpdates('Orders', row._rowIndex, {
     BendingCompletion: JSON.stringify(completion),
     BendingStatus: computeBendingStatus(completion, flat.length),
-    BendingLeftoverConsumed: JSON.stringify(consumedMap)
+    ExtraBendingCompletion: JSON.stringify(extraCompletion)
   });
   return getBendingQueueForOrder(payload.poNumber);
 }
@@ -160,7 +283,11 @@ function listPendingBendingOrders() {
     }
     var sheetCompletion = parseJsonSafe(r.SheetCompletion, []);
     var hasStarted = sheetCompletion.some(function (v) { return v === true; });
-    if (!hasStarted) {
+    // Extra parts logged during cutting are unlocked immediately (no "wait
+    // for cutting" gate), so a PO can have pending bending work from these
+    // alone even before any plan sheet is marked done.
+    var extraEntries = getExtraBendingEntries(String(r.PoNumber), r);
+    if (!hasStarted && extraEntries.length === 0) {
       return;
     }
 
@@ -177,6 +304,8 @@ function listPendingBendingOrders() {
         }
       }
     });
+    availableParts += extraEntries.length;
+    donePartsCount += extraEntries.filter(function (e) { return e.done; }).length;
 
     result.push({
       poNumber: String(r.PoNumber),
@@ -186,7 +315,7 @@ function listPendingBendingOrders() {
       partyName: r.PartyName || '',
       availableParts: availableParts,
       donePartsCount: donePartsCount,
-      totalPartsInPlan: flat.length
+      totalPartsInPlan: flat.length + extraEntries.length
     });
   });
   return result;

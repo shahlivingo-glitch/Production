@@ -97,6 +97,7 @@ function openBendingOrder(poNumber) {
     renderBendingStatusPill();
     renderBendingPoSummary();
     renderBendingEntries();
+    renderExtraBendingEntries();
   }).catch(function (err) {
     el('detail-loading').style.display = 'none';
     el('detail-error').textContent = 'Could not load ' + poNumber + ': ' + (err && err.message ? err.message : err);
@@ -132,16 +133,50 @@ function renderBendingEntries() {
   body.innerHTML = '';
 
   if (currentBendingQueue.entries.length === 0) {
-    var empty = document.createElement('div');
-    empty.className = 'empty-state';
-    empty.textContent = 'This plan has no parts defined yet.';
-    body.appendChild(empty);
+    // Only the true empty state - an order can have zero plan entries but
+    // still have extra-part tasks below, which get their own section/empty
+    // handling in renderExtraBendingEntries.
+    if (!currentBendingQueue.extraEntries || currentBendingQueue.extraEntries.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'This plan has no parts defined yet.';
+      body.appendChild(empty);
+    }
     return;
   }
 
   currentBendingQueue.entries.forEach(function (entry) {
     body.appendChild(buildBendingEntryCard(entry));
   });
+}
+
+// Shared by both the plan-entry cards and the extra-entry cards below - the
+// "use N from Leftover Inventory instead" checkbox. Explicit, unchecked by
+// default: the operator decides whether to pull from existing stock or bend
+// the freshly-cut parts, rather than it happening automatically. Returns
+// null when there's nothing to offer (already done, or nothing available).
+function buildUseInventoryCheckbox(entry) {
+  if (entry.done || !(entry.leftoverAvailable > 0)) return null;
+  var wrap = document.createElement('label');
+  wrap.className = 'leftover-action-banner';
+  wrap.style.marginTop = 'var(--space-3)';
+  wrap.style.marginBottom = '0';
+  wrap.style.display = 'flex';
+  wrap.style.alignItems = 'center';
+  wrap.style.gap = '8px';
+  wrap.style.cursor = 'pointer';
+
+  var cb = document.createElement('input');
+  cb.type = 'checkbox';
+
+  var text = document.createElement('span');
+  text.textContent = entry.leftoverAvailable + ' pcs of ' + entry.partName +
+    ' already available in leftover stock — use these instead of bending fresh ones?';
+
+  wrap.appendChild(cb);
+  wrap.appendChild(text);
+  wrap._checkbox = cb;
+  return wrap;
 }
 
 function buildBendingEntryCard(entry) {
@@ -155,9 +190,6 @@ function buildBendingEntryCard(entry) {
   checkbox.type = 'checkbox';
   checkbox.checked = entry.done;
   checkbox.disabled = !entry.unlocked || !canEdit('bendingStage');
-  checkbox.addEventListener('change', function (e) {
-    toggleBendingEntry(entry.index, e.target.checked);
-  });
 
   var text = document.createElement('span');
   var sizeTag = entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '';
@@ -176,35 +208,26 @@ function buildBendingEntryCard(entry) {
     card.appendChild(banner);
   }
 
-  // Actionable (not just informational, unlike Cutting's quieter note) -
-  // tells the operator to use the existing leftover stock for this task
-  // instead of only working off freshly cut sheets. Marking this entry
-  // done consumes up to entry.qty from that leftover automatically (server
-  // side), so it isn't double-counted for a future order.
-  if (entry.leftoverAvailable > 0) {
-    var leftoverBanner = document.createElement('div');
-    leftoverBanner.className = 'leftover-action-banner';
-    leftoverBanner.style.marginTop = 'var(--space-3)';
-    leftoverBanner.style.marginBottom = '0';
-    leftoverBanner.textContent = entry.leftoverAvailable + ' pcs of ' + entry.partName +
-      ' already available in leftover stock — pull and use those first.';
-    card.appendChild(leftoverBanner);
-  }
+  var useInventoryBox = buildUseInventoryCheckbox(entry);
+  if (useInventoryBox) card.appendChild(useInventoryBox);
+
+  checkbox.addEventListener('change', function (e) {
+    var useFromInventory = !!(useInventoryBox && useInventoryBox._checkbox.checked);
+    toggleBendingEntry(entry.index, e.target.checked, useFromInventory);
+  });
 
   return card;
 }
 
-function toggleBendingEntry(entryIndex, completed) {
+function toggleBendingEntry(entryIndex, completed, useFromInventory) {
   if (!canEdit('bendingStage')) {
     showFatalError('View only - ask an admin for edit access to mark parts done.');
     renderBendingEntries();
     return;
   }
-  apiPost('setBendingComplete', {
-    poNumber: currentBendingQueue.poNumber,
-    entryIndex: entryIndex,
-    completed: completed
-  }).then(function (result) {
+  var payload = { poNumber: currentBendingQueue.poNumber, entryIndex: entryIndex, completed: completed };
+  if (completed && useFromInventory) payload.useFromInventory = true;
+  apiPost('setBendingComplete', payload).then(function (result) {
     if (!result.ok) {
       showFatalError(result.error);
       renderBendingEntries();
@@ -219,17 +242,94 @@ function toggleBendingEntry(entryIndex, completed) {
   });
 }
 
+// Extra parts logged during cutting (Cutting Stage's Extras tab) - each is
+// its own bending task, separate from the plan's own entries above, tracked
+// by a stable extraKey (see Bending.gs's getExtraBendingEntries) instead of
+// a positional index. Always unlocked - the part's already been physically
+// cut by the time it's logged as an extra.
+function renderExtraBendingEntries() {
+  var section = el('bending-extra-section');
+  var body = el('bending-extra-entries-body');
+  if (!section || !body) return;
+  body.innerHTML = '';
+
+  var extraEntries = currentBendingQueue.extraEntries || [];
+  if (extraEntries.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  extraEntries.forEach(function (entry) {
+    body.appendChild(buildExtraBendingEntryCard(entry));
+  });
+}
+
+function buildExtraBendingEntryCard(entry) {
+  var card = document.createElement('div');
+  card.className = 'cs-sheet-card' + (entry.done ? ' done' : '');
+
+  var label = document.createElement('label');
+  label.className = 'cs-sheet-done-label';
+
+  var checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = entry.done;
+  checkbox.disabled = !canEdit('bendingStage');
+
+  var text = document.createElement('span');
+  var sizeTag = entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '';
+  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + entry.qty + ' <span class="muted">— ' + entry.sheetLabel + '</span>';
+
+  label.appendChild(checkbox);
+  label.appendChild(text);
+  card.appendChild(label);
+
+  var useInventoryBox = buildUseInventoryCheckbox(entry);
+  if (useInventoryBox) card.appendChild(useInventoryBox);
+
+  checkbox.addEventListener('change', function (e) {
+    var useFromInventory = !!(useInventoryBox && useInventoryBox._checkbox.checked);
+    toggleExtraBendingEntry(entry.extraKey, e.target.checked, useFromInventory);
+  });
+
+  return card;
+}
+
+function toggleExtraBendingEntry(extraKey, completed, useFromInventory) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to mark parts done.');
+    renderExtraBendingEntries();
+    return;
+  }
+  var payload = { poNumber: currentBendingQueue.poNumber, extraKey: extraKey, completed: completed };
+  if (completed && useFromInventory) payload.useFromInventory = true;
+  apiPost('setExtraBendingComplete', payload).then(function (result) {
+    if (!result.ok) {
+      showFatalError(result.error);
+      renderExtraBendingEntries();
+      return;
+    }
+    currentBendingQueue = result.data;
+    renderBendingStatusPill();
+    renderExtraBendingEntries();
+  }).catch(function (err) {
+    showFatalError(err);
+    renderExtraBendingEntries();
+  });
+}
+
 function markAllBendingComplete() {
   if (!canEdit('bendingStage')) {
     alert('View only - ask an admin for edit access to mark parts done.');
     return;
   }
-  if (!confirm('Mark every currently-available part for ' + currentBendingQueue.poNumber + ' as bent?')) return;
+  if (!confirm('Mark every currently-available part (including any extra parts) for ' + currentBendingQueue.poNumber + ' as bent?')) return;
   apiPost('markAllBendingComplete', { poNumber: currentBendingQueue.poNumber }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     currentBendingQueue = result.data;
     renderBendingStatusPill();
     renderBendingEntries();
+    renderExtraBendingEntries();
   }).catch(showFatalError);
 }
 

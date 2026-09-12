@@ -1237,11 +1237,33 @@ function renderExtrasTab() {
   renderExtrasList();
 }
 
+// Shared by both extras forms. The logged extra always becomes its own
+// Bending task on its own (see getExtraBendingEntries server-side) -
+// posting it to the Leftover Ledger too is a separate, optional choice,
+// since the part's already accounted for via that task either way. Default
+// unchecked for that reason.
+function buildAddToInventoryCheckbox(state) {
+  var wrap = document.createElement('label');
+  wrap.className = 'cs-sheet-done-label';
+  wrap.style.margin = 'var(--space-2) 0';
+  var cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!state.addToInventory;
+  cb.addEventListener('change', function (e) { state.addToInventory = e.target.checked; });
+  var text = document.createElement('span');
+  text.textContent = 'Also add to Extra Part Inventory (Leftover Ledger)';
+  text.style.fontWeight = '400';
+  text.style.fontSize = '13px';
+  wrap.appendChild(cb);
+  wrap.appendChild(text);
+  return wrap;
+}
+
 function renderExtraSheetForm() {
   var wrap = el('extra-sheet-form');
   wrap.innerHTML = '';
 
-  var state = { width: '', height: '', thickness: '', outputs: [{ partName: '', qty: '' }] };
+  var state = { width: '', height: '', thickness: '', outputs: [{ partName: '', qty: '' }], addToInventory: false };
 
   var dims = document.createElement('div');
   dims.className = 'sheet-dims';
@@ -1318,6 +1340,8 @@ function renderExtraSheetForm() {
   });
   wrap.appendChild(addRowBtn);
 
+  wrap.appendChild(buildAddToInventoryCheckbox(state));
+
   var submitBtn = document.createElement('button');
   submitBtn.className = 'btn-primary btn-block';
   submitBtn.style.marginTop = '10px';
@@ -1336,6 +1360,7 @@ function renderExtraSheetForm() {
     apiPost('addCuttingExtra', {
       poNumber: currentOrder.poNumber,
       type: 'extra-sheet',
+      addToInventory: !!state.addToInventory,
       details: {
         width: Number(state.width) || 0,
         height: Number(state.height) || 0,
@@ -1356,7 +1381,7 @@ function renderExtraPartForm() {
   wrap.innerHTML = '';
 
   if (!extraPartFormState) {
-    extraPartFormState = { sheetIndex: '', partName: '', qty: '', isExtra: false, size: '' };
+    extraPartFormState = { sheetIndex: '', partName: '', qty: '', isExtra: false, size: '', addToInventory: false };
   }
   var state = extraPartFormState;
 
@@ -1453,6 +1478,8 @@ function renderExtraPartForm() {
   qtyField.appendChild(qtyInput);
   wrap.appendChild(qtyField);
 
+  wrap.appendChild(buildAddToInventoryCheckbox(state));
+
   var submitBtn = document.createElement('button');
   submitBtn.className = 'btn-primary btn-block';
   submitBtn.textContent = 'Log Extra Part';
@@ -1487,6 +1514,7 @@ function renderExtraPartForm() {
     apiPost('addCuttingExtra', {
       poNumber: currentOrder.poNumber,
       type: 'extra-part',
+      addToInventory: !!state.addToInventory,
       details: details
     }).then(function (result) {
       if (!result.ok) return showFatalError(result.error);
