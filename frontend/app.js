@@ -163,6 +163,39 @@ function initSidebarToggle() {
   backdrop.addEventListener('click', closeSidebar);
 }
 
+// Google Apps Script occasionally serves an HTML error/interstitial page
+// instead of the JSON API response (post-deploy propagation lag, or just a
+// brief Apps Script infra hiccup - not specific to any one action). Reading
+// that as JSON throws a raw "Unexpected token '<' ... is not valid JSON"
+// parse error, which used to surface straight to the user. Parse via text()
+// first so both apiGet/apiPost can turn that into one clear message instead.
+function parseApiResponse(response) {
+  return response.text().then(function (text) {
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      var err = new Error('The server sent an unexpected response instead of data - this is usually a brief Google Apps Script hiccup. Please try again.');
+      err.isBadApiResponse = true;
+      throw err;
+    }
+  });
+}
+
+// GETs are safe to retry automatically (idempotent reads) - a few short
+// backoff attempts quietly ride out the transient-HTML-response case above
+// before anything reaches the user. POSTs are NOT auto-retried here: some
+// actions aren't safe to blindly repeat if the write actually went through
+// server-side but the response back was the one that got mangled.
+function fetchJsonWithRetry(url, delays) {
+  return fetch(url).then(parseApiResponse).catch(function (err) {
+    if (err && err.isBadApiResponse && delays.length) {
+      return new Promise(function (resolve) { setTimeout(resolve, delays[0]); })
+        .then(function () { return fetchJsonWithRetry(url, delays.slice(1)); });
+    }
+    throw err;
+  });
+}
+
 function apiGet(action, params) {
   var url = new URL(API_URL);
   url.searchParams.set('action', action);
@@ -171,7 +204,7 @@ function apiGet(action, params) {
   Object.keys(params || {}).forEach(function (k) {
     url.searchParams.set(k, params[k]);
   });
-  return fetch(url.toString()).then(function (r) { return r.json(); });
+  return fetchJsonWithRetry(url.toString(), [500, 1000, 1800]);
 }
 
 function apiPost(action, payload) {
@@ -180,7 +213,7 @@ function apiPost(action, payload) {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body)
-  }).then(function (r) { return r.json(); });
+  }).then(parseApiResponse);
 }
 
 function showFatalError(err) {
