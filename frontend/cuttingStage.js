@@ -11,6 +11,7 @@ var expandedVersionId = null;
 var planDirty = false;
 var extraPromptState = null;
 var extraPartFormState = null;
+var leftoverByPart = {}; // { partName: qty } already sitting in the Leftover Ledger for the current order's model - informational only, see buildPlanOutputRow
 
 function initCuttingStage() {
   el('back-to-dashboard-btn').addEventListener('click', function () {
@@ -327,6 +328,7 @@ function openOrder(poNumber) {
     knownExtraParts = bundle.knownExtraParts;
     modelPartNames = Object.keys((bundle.modelParts && bundle.modelParts.partsPerUnit) || {});
     versionHistory = bundle.versionHistory;
+    leftoverByPart = bundle.leftoverByPart || {};
     refreshKnownExtraPartsDatalist();
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
@@ -834,6 +836,17 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
   var container = document.createElement('div');
   container.appendChild(row);
   container.appendChild(myRow);
+
+  // Purely informational - doesn't change this row's math at all, just
+  // flags that some of this part is already sitting cut from a previous
+  // over-cut, in case that changes what the operator chooses to cut now.
+  if (!output.isExtra && output.partName && leftoverByPart[output.partName] > 0) {
+    var leftoverNote = document.createElement('div');
+    leftoverNote.className = 'leftover-note';
+    leftoverNote.textContent = leftoverByPart[output.partName] + ' pcs already available in leftover stock.';
+    container.appendChild(leftoverNote);
+  }
+
   return container;
 }
 

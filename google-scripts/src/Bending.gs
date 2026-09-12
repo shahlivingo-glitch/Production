@@ -36,6 +36,13 @@ function getBendingQueueForOrder(poNumber) {
   var bendingCompletion = parseJsonSafe(order.BendingCompletion, []);
 
   var entries = flattenPlanOutputs(sheets).map(function (entry, index) {
+    // Non-extra parts only - mirrors applyCutStockAndLedger's own scoping
+    // (extras never auto-post to/draw from the ledger). Live lookup each
+    // time, so it reflects whatever another order's completion may have
+    // already consumed.
+    var leftoverAvailable = (!entry.isExtra && !bendingCompletion[index])
+      ? getExtraPartInventoryQty(order.ModelName, entry.partName, '')
+      : 0;
     return {
       index: index,
       sheetIndex: entry.sheetIndex,
@@ -45,7 +52,8 @@ function getBendingQueueForOrder(poNumber) {
       isExtra: entry.isExtra,
       size: entry.size,
       unlocked: !!sheetCompletion[entry.sheetIndex],
-      done: !!bendingCompletion[index]
+      done: !!bendingCompletion[index],
+      leftoverAvailable: leftoverAvailable
     };
   });
 
@@ -59,6 +67,24 @@ function getBendingQueueForOrder(poNumber) {
     entries: entries,
     bendingStatus: order.BendingStatus || 'pending'
   };
+}
+
+// Best-effort: pull an entry's need from the Leftover Ledger instead of
+// leaving that surplus sitting unused, the moment it's newly marked done
+// (never for one that was already done - only a genuine not-done -> done
+// transition, so a bulk "mark all" on an order with older, already-bent
+// entries never retroactively consumes stock for parts that had nothing to
+// do with this completion). Guarded by BendingLeftoverConsumed too, mirroring
+// SheetStockConsumed, so re-checking an entry never double-consumes. Extras
+// are skipped - they never auto-post to/draw from the ledger either way.
+function consumeBendingLeftoverIfNew(row, entry, idx, wasDone, consumedMap) {
+  if (wasDone || consumedMap[String(idx)] || entry.isExtra || !entry.partName) return;
+  try {
+    consumeExtraPartInventory(row.ModelName, entry.partName, '', Number(entry.qty) || 0);
+  } catch (err) {
+    // swallow - completion must still record
+  }
+  consumedMap[String(idx)] = true;
 }
 
 function setBendingComplete(payload) {
@@ -84,11 +110,18 @@ function setBendingComplete(payload) {
   }
 
   var completion = parseJsonSafe(row.BendingCompletion, []);
+  var wasDone = !!completion[idx];
   completion[idx] = !!payload.completed;
-  writeRowUpdates('Orders', row._rowIndex, {
+  var updates = {
     BendingCompletion: JSON.stringify(completion),
     BendingStatus: computeBendingStatus(completion, flat.length)
-  });
+  };
+  if (payload.completed) {
+    var consumedMap = parseJsonSafe(row.BendingLeftoverConsumed, {});
+    consumeBendingLeftoverIfNew(row, entry, idx, wasDone, consumedMap);
+    updates.BendingLeftoverConsumed = JSON.stringify(consumedMap);
+  }
+  writeRowUpdates('Orders', row._rowIndex, updates);
   return getBendingQueueForOrder(payload.poNumber);
 }
 
@@ -101,16 +134,20 @@ function markAllBendingComplete(payload) {
   var flat = flattenPlanOutputs(sheets);
   var sheetCompletion = parseJsonSafe(row.SheetCompletion, []);
   var completion = parseJsonSafe(row.BendingCompletion, []);
+  var consumedMap = parseJsonSafe(row.BendingLeftoverConsumed, {});
 
   flat.forEach(function (entry, idx) {
     if (sheetCompletion[entry.sheetIndex]) {
+      var wasDone = !!completion[idx];
       completion[idx] = true;
+      consumeBendingLeftoverIfNew(row, entry, idx, wasDone, consumedMap);
     }
   });
 
   writeRowUpdates('Orders', row._rowIndex, {
     BendingCompletion: JSON.stringify(completion),
-    BendingStatus: computeBendingStatus(completion, flat.length)
+    BendingStatus: computeBendingStatus(completion, flat.length),
+    BendingLeftoverConsumed: JSON.stringify(consumedMap)
   });
   return getBendingQueueForOrder(payload.poNumber);
 }

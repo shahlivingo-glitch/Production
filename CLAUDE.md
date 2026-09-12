@@ -244,6 +244,10 @@ animation library added; stays framework-free like the rest of the app.
   plan **at creation** — see Bulk Unit Plan below; `Qty` always means the
   real total unit count either way. SheetQtyOverrides (JSON
   `{ "<sheetIndex>": physicalSheets }` — see Sheet Qty Overrides below).
+  BendingLeftoverConsumed (JSON `{ "<entryIndex>": true }` — guards
+  against double-consuming the Leftover Ledger on a bending entry's
+  repeat/bulk completion, mirroring SheetStockConsumed; see Leftover
+  Ledger Checks below).
 - `PlanVersions`: VersionId, ModelName, VersionNumber (per-model
   counter, 1-based), SourcePlanName, Sheets (same shape as
   CuttingPlans.Sheets), CreatedAt, Note. Only ever created by an
@@ -252,9 +256,12 @@ animation library added; stays framework-free like the rest of the app.
   `extra-part`), Details (JSON, shape varies by Type — see Extras),
   Timestamp.
 - `ExtraPartInventory`: ModelName (or the literal string `Universal`),
-  PartName, Size, Qty (running total, accumulates — never overwrites),
-  UpdatedAt. Auto-maintained from `CuttingExtras` and from multi-yield
-  "extra full sheet" surplus, not directly edited.
+  PartName, Size, Qty (running total — added to by `addToExtraPartInventory`,
+  subtracted from by `consumeExtraPartInventory`, floored at 0, never
+  overwritten directly), UpdatedAt. Auto-maintained from `CuttingExtras`,
+  from multi-yield "extra full sheet" surplus, and from Bending
+  auto-consuming it — see Leftover Ledger Checks below — not directly
+  edited by a user anywhere in the UI.
 - `SheetStock`: Size (`"<w>x<h>x<t>"` canonical key from
   `sheetSizeKey()`), Width, Height, Thickness, Qty (running on-hand, MAY
   go negative), UpdatedAt.
@@ -338,6 +345,47 @@ One field, refined twice over an order's life:
 `markAllSheetsComplete` (bulk "mark all complete") does **not** collect a
 per-sheet actual-cut value — it applies whatever's already in
 `SheetQtyOverrides` (creation-time overrides, or nothing) unchanged.
+
+### Leftover Ledger Checks
+
+Both Cutting Stage and Bending Stage look up the Leftover Ledger
+(`ExtraPartInventory`) for a part before/while it's worked on, but react
+differently — Cutting only informs, Bending acts:
+
+- **Cutting Stage (informational only)**: `getOrderDetailBundle` returns
+  `leftoverByPart` (`{ partName: qty }`, via
+  `getLeftoverByPartForSheets(modelName, sheets)` in `CuttingExtras.gs`) —
+  every non-extra part referenced anywhere in the order's active sheets that
+  currently has ledger stock > 0. The Cutting Plan tab shows a quiet note
+  under any output row whose part is in that map ("N pcs already available
+  in leftover stock"). Pure read, computed fresh on every page load — never
+  changes `computeOrderSheetPlan`'s math, never consumes anything.
+- **Bending Stage (acts on it)**: `getBendingQueueForOrder` attaches
+  `leftoverAvailable` to each not-yet-done, non-extra entry (0 once done).
+  The UI shows an actionable banner ("pull and use those first") instead of
+  a quiet note. Marking that entry done consumes
+  `min(entry.qty, leftoverAvailable)` from the ledger via
+  `consumeExtraPartInventory` (floors at 0, never goes negative) — so
+  leftover stock used for this task isn't still sitting there to be offered
+  to a future order.
+
+Both directions key off **non-extra rows only** — extras never auto-post
+to or draw from the ledger either way (matches `applyCutStockAndLedger`'s
+own `!r.isExtra` scoping), and the lookup is always
+`(order.modelName, partName, size: '')` — a plain part's ledger key, same
+one `applyCutStockAndLedger` posts surplus to.
+
+Bending's consumption only fires on a genuine not-done → done *transition*
+in the current call (`consumeBendingLeftoverIfNew`'s `wasDone` check),
+**not** just "whenever `BendingLeftoverConsumed` lacks an entry" — this
+matters specifically for `markAllBendingComplete`, which (like
+`markAllSheetsComplete`) unconditionally touches every eligible entry on
+every call. Without the transition check, the *first* bulk-complete click
+after this feature shipped would retroactively consume ledger stock for
+entries that were already bent long ago, for reasons that have nothing to
+do with today's click. `setBendingComplete` (single-entry) additionally
+guards on `BendingLeftoverConsumed` itself, mirroring `SheetStockConsumed`,
+so an uncheck→recheck of the same entry can't double-consume either.
 
 ### Bulk Unit Plan
 

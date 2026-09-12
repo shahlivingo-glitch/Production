@@ -11,14 +11,19 @@ function jsonOutput(obj) {
 // getOrder and getActivePlanVersionForOrder touch Orders).
 function getOrderDetailBundle(poNumber) {
   var order = getOrder(poNumber);
+  var activeVersion = getActivePlanVersionForOrder({ poNumber: poNumber });
   return {
     order: order,
-    activeVersion: getActivePlanVersionForOrder({ poNumber: poNumber }),
+    activeVersion: activeVersion,
     extras: listCuttingExtras(poNumber),
     allModels: listCuttingConfigModels(),
     knownExtraParts: listKnownExtraParts(),
     modelParts: getModelParts(order.modelName),
-    versionHistory: listPlanVersionsForModel(order.modelName)
+    versionHistory: listPlanVersionsForModel(order.modelName),
+    // { partName: qty } already sitting in the Leftover Ledger for this
+    // model - purely informational "already available" badge in the
+    // Cutting Plan tab, doesn't affect the cutting math at all.
+    leftoverByPart: getLeftoverByPartForSheets(order.modelName, activeVersion.sheets)
   };
 }
 

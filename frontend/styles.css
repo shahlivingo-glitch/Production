@@ -617,6 +617,16 @@ a { color: var(--color-accent); }
   font-variant-numeric: tabular-nums;
 }
 
+/* Informational-only "already in leftover stock" note under an output row -
+   never blocks or changes the row above it, so it's deliberately quieter
+   than an alert-banner. */
+.leftover-note {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  margin: -4px 0 var(--space-2) var(--space-2);
+  font-style: italic;
+}
+
 /* Multi-yield toggle under an output row */
 .multi-yield-row {
   display: flex;
@@ -797,6 +807,19 @@ a { color: var(--color-accent); }
   background: var(--color-surface-muted);
   color: var(--color-muted-foreground);
   cursor: default;
+}
+
+/* Actionable, not a warning - "here's something helpful to do" rather than
+   "something's wrong", so a distinct blue tone from .alert-banner's amber. */
+.leftover-action-banner {
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-accent);
+  color: var(--color-primary);
+  padding: 10px var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: var(--space-3);
 }
 
 .alert-banner {

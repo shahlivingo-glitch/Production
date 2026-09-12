@@ -26,6 +26,58 @@ function addToExtraPartInventory(modelName, partName, size, qty) {
   }
 }
 
+function getExtraPartInventoryQty(modelName, partName, size) {
+  if (!partName) return 0;
+  var row = findRow('ExtraPartInventory', function (r) {
+    return String(r.ModelName) === String(modelName) &&
+      String(r.PartName) === String(partName) &&
+      String(r.Size || '') === String(size || '');
+  });
+  return row ? (Number(row.Qty) || 0) : 0;
+}
+
+// { partName: qty } of leftover-ledger stock already sitting for `modelName`,
+// for every non-extra part referenced anywhere in `sheets` (extras are
+// excluded - they're never auto-posted to the ledger either, see
+// applyCutStockAndLedger). Purely a read - used for Cutting Stage's
+// "already available in leftover stock" badge, which never changes the
+// cutting output itself. Only includes parts that actually have stock, so
+// the frontend can just check `leftoverByPart[partName]`.
+function getLeftoverByPartForSheets(modelName, sheets) {
+  var names = {};
+  (sheets || []).forEach(function (sheet) {
+    (sheet.outputs || []).forEach(function (o) {
+      if (!o.isExtra && o.partName) names[o.partName] = true;
+    });
+  });
+  var out = {};
+  Object.keys(names).forEach(function (partName) {
+    var qty = getExtraPartInventoryQty(modelName, partName, '');
+    if (qty > 0) out[partName] = qty;
+  });
+  return out;
+}
+
+// Consumes up to `qty` units of a part's leftover stock (floored at 0 - a
+// missing/empty row just means nothing to consume). Used when Bending marks
+// an entry done and that part already has surplus sitting in the ledger, so
+// it isn't offered again for a later order. Returns how much was actually
+// consumed (<= qty, may be 0).
+function consumeExtraPartInventory(modelName, partName, size, qty) {
+  if (!partName || !(qty > 0)) return 0;
+  var matchFn = function (r) {
+    return String(r.ModelName) === String(modelName) &&
+      String(r.PartName) === String(partName) &&
+      String(r.Size || '') === String(size || '');
+  };
+  var existing = findRow('ExtraPartInventory', matchFn);
+  var available = existing ? (Number(existing.Qty) || 0) : 0;
+  if (available <= 0) return 0;
+  var consumed = Math.min(available, qty);
+  updateRow('ExtraPartInventory', matchFn, { Qty: available - consumed, UpdatedAt: nowIso() });
+  return consumed;
+}
+
 function addCuttingExtra(payload) {
   var order = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!order) {

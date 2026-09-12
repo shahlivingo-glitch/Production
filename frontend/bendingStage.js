@@ -176,6 +176,21 @@ function buildBendingEntryCard(entry) {
     card.appendChild(banner);
   }
 
+  // Actionable (not just informational, unlike Cutting's quieter note) -
+  // tells the operator to use the existing leftover stock for this task
+  // instead of only working off freshly cut sheets. Marking this entry
+  // done consumes up to entry.qty from that leftover automatically (server
+  // side), so it isn't double-counted for a future order.
+  if (entry.leftoverAvailable > 0) {
+    var leftoverBanner = document.createElement('div');
+    leftoverBanner.className = 'leftover-action-banner';
+    leftoverBanner.style.marginTop = 'var(--space-3)';
+    leftoverBanner.style.marginBottom = '0';
+    leftoverBanner.textContent = entry.leftoverAvailable + ' pcs of ' + entry.partName +
+      ' already available in leftover stock — pull and use those first.';
+    card.appendChild(leftoverBanner);
+  }
+
   return card;
 }
 
