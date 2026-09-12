@@ -372,6 +372,7 @@ function renderSheetsRequired() {
 
     line.appendChild(qtyWrap);
     box.appendChild(line);
+    box.appendChild(buildSheetPartsSummary(selectedModelSheets[index]));
 
     box.appendChild(buildSheetYieldDetail(sheetPlan));
   });
@@ -392,6 +393,28 @@ function renderSheetsRequired() {
 
 // One block per sheet-type: only shown when the sheet has a multi-yield row
 // or a binding remainder. Explains the shared-sheet math + surplus + decision.
+// Always-visible "what comes out of this sheet" line - the raw per-sheet
+// output list (partName x qty as configured in Cutting Configuration), not
+// scaled by qty or physical sheet count. buildSheetYieldDetail below covers
+// the fuller need/produced/surplus math, but only for multi-yield or
+// decision-needed sheets; this one shows for every sheet, always.
+function buildSheetPartsSummary(sheet) {
+  var wrap = document.createElement('div');
+  wrap.className = 'sheet-parts-summary';
+  var outputs = (sheet && sheet.outputs) || [];
+  if (outputs.length === 0) {
+    wrap.textContent = 'No parts assigned to this sheet yet.';
+    return wrap;
+  }
+  var parts = outputs.map(function (o) {
+    var name = o.partName || '(unnamed part)';
+    if (o.isExtra && o.size) name += ' (' + o.size + ')';
+    return name + ' ×' + (Number(o.qty) || 0);
+  });
+  wrap.textContent = 'Produces per sheet: ' + parts.join(', ');
+  return wrap;
+}
+
 function buildSheetYieldDetail(sheetPlan) {
   var wrap = document.createElement('div');
   var anyMulti = sheetPlan.rows.some(function (r) { return r.multiYield; });

@@ -617,6 +617,14 @@ a { color: var(--color-accent); }
   font-variant-numeric: tabular-nums;
 }
 
+/* "What comes out of this sheet" - shown under every Sheets Required line
+   on the PO form. */
+.sheet-parts-summary {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  margin: -4px 0 var(--space-2) 0;
+}
+
 /* Informational-only "already in leftover stock" note under an output row -
    never blocks or changes the row above it, so it's deliberately quieter
    than an alert-banner. */
