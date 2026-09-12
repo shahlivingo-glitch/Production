@@ -12,7 +12,8 @@ var planDirty = false;
 var extraPromptState = null;
 var extraPartFormState = null;
 var leftoverByPart = {}; // { partName: qty } already sitting in the Leftover Ledger for the current order's model - informational only, see buildPlanOutputRow
-var actualCutDrafts = {}; // { sheetIndex: typed value } - unsaved "Actual cut" edits, staged locally until that sheet's own Save button is clicked (see buildPlanSheetCard/saveSheetQtyOverride). Cleared whenever sheet indices could no longer line up with what's staged: opening an order, saving a new plan version, or adding/removing a sheet.
+var actualCutDrafts = {}; // { sheetIndex: typed value } - unsaved "Actual sheet" edits, staged locally until that sheet's own Save button is clicked (see buildPlanSheetCard/saveSheetQtyOverride). Cleared whenever sheet indices could no longer line up with what's staged: opening an order, saving a new plan version, or adding/removing a sheet.
+var modelPartsMap = {}; // raw Models.PartsPerUnit for the current order's model (name -> qty, or {qty,size}) - used to default/edit a part's size on its output row, see buildPlanOutputRow/handlePartSizeChange
 
 function initCuttingStage() {
   el('back-to-dashboard-btn').addEventListener('click', function () {
@@ -331,7 +332,8 @@ function openOrder(poNumber) {
     extras = bundle.extras;
     allModels = bundle.allModels;
     knownExtraParts = bundle.knownExtraParts;
-    modelPartNames = Object.keys((bundle.modelParts && bundle.modelParts.partsPerUnit) || {});
+    modelPartsMap = (bundle.modelParts && bundle.modelParts.partsPerUnit) || {};
+    modelPartNames = Object.keys(modelPartsMap);
     versionHistory = bundle.versionHistory;
     leftoverByPart = bundle.leftoverByPart || {};
     actualCutDrafts = {};
@@ -591,6 +593,13 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   plannedSpan.textContent = plannedText;
   totalLine.appendChild(plannedSpan);
 
+  // The actual (or, before it's set, planned) sheet count for THIS
+  // sheet-type - what every output row's "x N = total" below is computed
+  // against. A mutable ref (not a plain number) so the actual-sheet input's
+  // live typing can refresh every already-built output row's total without
+  // a full re-render (see outputTotalRefs below).
+  var effectiveSheetsRef = { value: sheetPlan ? sheetPlan.physicalSheets : multiplier };
+
   // Editable right here, ahead of actually cutting - separate from (but
   // feeding into) the "Sheets actually cut" prompt shown when marking this
   // sheet done, which pre-fills from whatever's set here. Once the sheet is
@@ -607,16 +616,17 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
     if (done) {
       var lockedSpan = document.createElement('span');
       lockedSpan.className = 'cs-actual-cut-locked';
-      lockedSpan.textContent = (sheetPlan.overridden ? 'Actual cut: ' : 'Cut: ') + sheetPlan.physicalSheets;
+      lockedSpan.textContent = (sheetPlan.overridden ? 'Actual sheet: ' : 'Cut: ') + sheetPlan.physicalSheets;
       totalLine.appendChild(lockedSpan);
     } else {
       var committedValue = sheetPlan.physicalSheets;
       var draftValue = actualCutDrafts.hasOwnProperty(sheetIndex) ? actualCutDrafts[sheetIndex] : committedValue;
+      effectiveSheetsRef.value = Number(draftValue) || 0;
 
       var actualWrap = document.createElement('span');
       actualWrap.className = 'cs-actual-cut-wrap';
       var actualLabel = document.createElement('span');
-      actualLabel.textContent = 'Actual cut:';
+      actualLabel.textContent = 'Actual sheet:';
       actualWrap.appendChild(actualLabel);
       var actualInput = document.createElement('input');
       actualInput.type = 'number';
@@ -643,6 +653,10 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
           actualCutDrafts[sheetIndex] = e.target.value;
         }
         saveActualBtn.disabled = !actualCutDrafts.hasOwnProperty(sheetIndex);
+        effectiveSheetsRef.value = Number(e.target.value) || 0;
+        outputTotalRefs.forEach(function (ref) {
+          updateOutputTotal(ref.totalSpan, ref.qtyInput.value, effectiveSheetsRef.value);
+        });
       });
 
       saveActualBtn.addEventListener('click', function () {
@@ -656,8 +670,11 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   }
   card.appendChild(totalLine);
 
+  var outputTotalRefs = [];
   sheet.outputs.forEach(function (output, outputIndex) {
-    card.appendChild(buildPlanOutputRow(sheetIndex, output, outputIndex));
+    var built = buildPlanOutputRow(sheetIndex, output, outputIndex, effectiveSheetsRef);
+    card.appendChild(built.element);
+    outputTotalRefs.push({ qtyInput: built.qtyInput, totalSpan: built.totalSpan });
   });
 
   if (sheetPlan && (anyMulti || sheetPlan.decisionKey)) {
@@ -832,7 +849,7 @@ function buildExtraModelField(row, defaultModel) {
   return select;
 }
 
-function buildPlanOutputRow(sheetIndex, output, outputIndex) {
+function buildPlanOutputRow(sheetIndex, output, outputIndex, effectiveSheetsRef) {
   var row = document.createElement('div');
   row.className = 'cs-output-row';
 
@@ -876,6 +893,24 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
     });
     sizeInput.addEventListener('change', function () { markDirty(); });
     row.appendChild(sizeInput);
+  } else if (output.partName) {
+    // Every regular part gets a size box too, not just extras - defaults to
+    // whatever's already set on this specific output, else the model's own
+    // part definition (Cutting Configuration's Size field, if it has one).
+    // Changing it asks where that edit should live - see
+    // handlePartSizeChange.
+    var partSizeInput = document.createElement('input');
+    partSizeInput.type = 'text';
+    partSizeInput.className = 'cs-part-size-input';
+    partSizeInput.placeholder = 'Size';
+    partSizeInput.title = "Edit this part's size";
+    partSizeInput.value = (output.size !== undefined && output.size !== null && output.size !== '')
+      ? output.size
+      : getModelPartSize(output.partName);
+    partSizeInput.addEventListener('change', function (e) {
+      handlePartSizeChange(sheetIndex, outputIndex, output.partName, e.target.value);
+    });
+    row.appendChild(partSizeInput);
   }
 
   var qtyInput = document.createElement('input');
@@ -884,13 +919,13 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
   qtyInput.value = output.qty;
   qtyInput.addEventListener('input', function (e) {
     workingSheets[sheetIndex].outputs[outputIndex].qty = e.target.value;
-    updateOutputTotal(totalSpan, e.target.value);
+    updateOutputTotal(totalSpan, e.target.value, effectiveSheetsRef.value);
   });
   qtyInput.addEventListener('change', function () { markDirty(); });
 
   var totalSpan = document.createElement('span');
   totalSpan.className = 'cs-output-total';
-  updateOutputTotal(totalSpan, output.qty);
+  updateOutputTotal(totalSpan, output.qty, effectiveSheetsRef.value);
 
   var removeBtn = document.createElement('button');
   removeBtn.className = 'icon-btn';
@@ -923,14 +958,69 @@ function buildPlanOutputRow(sheetIndex, output, outputIndex) {
     container.appendChild(leftoverNote);
   }
 
-  return container;
+  return { element: container, qtyInput: qtyInput, totalSpan: totalSpan };
 }
 
-function updateOutputTotal(span, qtyPerSheet) {
+// Reads modelPartsMap (raw Models.PartsPerUnit) - values are either a bare
+// qty number (legacy/no size set) or {qty,size} once Cutting Configuration's
+// own Size field has been used for that part.
+function getModelPartSize(partName) {
+  var raw = modelPartsMap[partName];
+  return (raw && typeof raw === 'object') ? String(raw.size || '') : '';
+}
+
+function getModelPartQty(partName) {
+  var raw = modelPartsMap[partName];
+  return Number((raw && typeof raw === 'object') ? raw.qty : raw) || 0;
+}
+
+// A part's size can be edited from either Cutting Configuration (permanent,
+// affects every future order) or right here on a specific PO's output row.
+// Ask which one this edit is - there's no way to tell intent from the value
+// alone, and the two have very different reach.
+function handlePartSizeChange(sheetIndex, outputIndex, partName, newSize) {
+  newSize = (newSize || '').trim();
+  var savePermanently = confirm(
+    'Save "' + newSize + '" as ' + partName + '\'s size in the part definition?\n' +
+    'This applies to every future order for this model.\n\n' +
+    'Choose Cancel to use it just for this one PO instead.'
+  );
+
+  if (savePermanently) {
+    if (!canEdit('cuttingConfig')) {
+      alert('You need edit access to Cutting Configuration to save this permanently - using it just for this PO instead.');
+      workingSheets[sheetIndex].outputs[outputIndex].size = newSize;
+      markDirty();
+      renderPlanTab();
+      return;
+    }
+    var updated = {};
+    Object.keys(modelPartsMap).forEach(function (name) { updated[name] = modelPartsMap[name]; });
+    updated[partName] = { qty: getModelPartQty(partName), size: newSize };
+    apiPost('saveModelParts', { modelName: currentOrder.modelName, partsPerUnit: updated }).then(function (result) {
+      if (!result.ok) return showFatalError(result.error);
+      modelPartsMap = updated;
+      renderPlanTab();
+    }).catch(showFatalError);
+  } else {
+    workingSheets[sheetIndex].outputs[outputIndex].size = newSize;
+    markDirty();
+    renderPlanTab();
+  }
+}
+
+// sheets is the sheet-type's effective (actual, or planned before it's set)
+// physical count - NOT the PO's raw unit qty/bulk multiplier. Those only
+// coincide for a plain 1-sheet-per-unit sheet with no override; a
+// multi-yield sheet's physical count is already different from the
+// multiplier even before any override, and an override moves it further
+// still - so this must always be the one true source (sheetPlan.
+// physicalSheets, or its draft), never re-derived from the multiplier here.
+function updateOutputTotal(span, qtyPerSheet, sheets) {
   var perSheet = Number(qtyPerSheet) || 0;
-  var multiplier = getCurrentOrderSheetMultiplier();
-  var total = perSheet * multiplier;
-  span.textContent = '× ' + multiplier + ' = ' + total;
+  var n = Number(sheets) || 0;
+  var total = perSheet * n;
+  span.textContent = '× ' + n + ' = ' + total;
 }
 
 function addSheet() {
@@ -973,6 +1063,11 @@ function saveNewVersion() {
         if (o.isExtra) {
           out.isExtra = true;
           out.size = o.size || '';
+        } else if (o.size) {
+          // A one-time size set on this specific output (handlePartSizeChange's
+          // "just this PO" path) - not the model's own part size, which
+          // lives in Models.PartsPerUnit instead and needs no saving here.
+          out.size = o.size;
         }
         if (o.multiYield && Number(o.yieldPerSheet) >= 1) {
           out.multiYield = true;

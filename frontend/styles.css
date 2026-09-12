@@ -642,6 +642,7 @@ a { color: var(--color-accent); }
 .cs-output-row select, .output-row select { flex: 1; min-width: 120px; }
 .cs-output-row input[type="text"] { flex: 1; min-width: 100px; }
 .cs-output-row input[type="number"], .output-row input[type="number"] { width: 74px; font-variant-numeric: tabular-nums; }
+.cs-output-row input.cs-part-size-input[type="text"] { flex: none; width: 100px; min-width: 0; }
 
 .cs-output-total {
   font-size: 12px;
