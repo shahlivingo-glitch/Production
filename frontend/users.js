@@ -15,6 +15,11 @@ function buildPermissionsGrid(container, initialPerms) {
     row.style.flexDirection = 'row';
     row.style.alignItems = 'center';
     row.style.justifyContent = 'space-between';
+    // A longer menu label ("Production Order Form") next to the select can
+    // run out of room on a narrow phone - wrap to its own line instead of
+    // forcing the whole page to scroll horizontally.
+    row.style.flexWrap = 'wrap';
+    row.style.rowGap = '4px';
 
     var label = document.createElement('label');
     label.textContent = m.label;

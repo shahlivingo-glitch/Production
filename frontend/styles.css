@@ -452,9 +452,18 @@ a { color: var(--color-accent); }
   .columns, .po-layout {
     flex-direction: column;
   }
+  /* !important is deliberate here: several pages set a fixed flex-basis or
+     min-width inline on a .column (e.g. sheetStock.html's "flex:0 0 320px",
+     users.html's "min-width:420px") for desktop's side-by-side layout.
+     Inline styles always beat an external stylesheet rule regardless of
+     selector, so without !important these would keep forcing a column
+     wider than the screen on a phone even after flex-direction switches to
+     column above - the classic cause of a page that scrolls sideways on
+     mobile. */
   .model-col, .po-form-col, .po-table-col, .column {
-    flex: 1 1 auto;
-    width: 100%;
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
   }
 }
 
@@ -537,6 +546,11 @@ a { color: var(--color-accent); }
   gap: var(--space-1);
   margin-bottom: var(--space-4);
   border-bottom: 1px solid var(--color-border);
+  /* 3 tabs' worth of padded text ("Version History") doesn't reliably fit a
+     narrow phone screen - scroll the tab strip itself sideways instead of
+     letting it force the whole page to scroll horizontally. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .cs-tab-btn {
@@ -549,6 +563,8 @@ a { color: var(--color-accent); }
   color: var(--color-muted-foreground);
   border-radius: 0;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: color var(--duration-fast) ease, border-color var(--duration-fast) ease;
 }
 
@@ -1152,4 +1168,30 @@ button:active:not(:disabled) { transform: scale(0.97); }
   .cs-dashboard, .cs-detail { padding: var(--space-3); }
   .cs-po-card { flex-direction: column; align-items: flex-start; }
   .cs-po-card-sheets { text-align: left; }
+
+  /* iOS Safari auto-zooms the whole page on focusing any input/select
+     under 16px - jarring on a form-heavy app like this one where almost
+     every screen has several fields. 16px avoids it; the desktop 14px is
+     kept as-is since this only matters on a touchscreen. */
+  input, select {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Bigger touch targets for the small "x" remove buttons used throughout
+     (remove sheet/output/model/plan/user) - 24x24px is workable with a
+     mouse pointer but easy to miss or mis-tap with a finger. */
+  .icon-btn {
+    padding: 8px 10px;
+    font-size: 18px;
+  }
+
+  /* Defensive: a couple of flex rows that pair a label/id with a
+     right-aligned value (dashboard activity rows, PO card headers) had no
+     wrap fallback - harmless on desktop's wide viewport, but a long PO
+     number/model name next to a timestamp can run out of room on a phone. */
+  .dash-row {
+    flex-wrap: wrap;
+  }
 }
