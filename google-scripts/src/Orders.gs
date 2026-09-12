@@ -213,6 +213,28 @@ function applyCutStockAndLedger(row, sheetIndex, sheets, consumed, overrides) {
   return consumed;
 }
 
+// Persists a corrected sheets array back to whatever the order's active
+// source actually is - the PlanVersion it's already pinned to, or (if it's
+// still following the model's named plan directly, no version saved yet) a
+// brand-new first version, exactly like clicking "Save as New Plan Version"
+// would create. Unlike saveNewPlanVersion, this NEVER resets
+// SheetCompletion/BendingCompletion/CuttingStatus/etc - it's called mid-way
+// through setSheetComplete, which is already writing the correct value for
+// those itself; a full reset here would wipe out every other sheet's
+// completion state just because one sheet's fields got corrected.
+function persistOrderActiveSheets(row, sheets) {
+  if (row.PlanVersionId) {
+    var versionRow = findRowById('PlanVersions', 'VersionId', row.PlanVersionId);
+    if (versionRow) {
+      writeRowUpdates('PlanVersions', versionRow._rowIndex, { Sheets: JSON.stringify(sheets) });
+    }
+    return;
+  }
+  var versionId = createPlanVersionRow(row.ModelName, row.PlanName, sheets, 'Auto-saved from Mark Done for ' + row.PoNumber);
+  writeRowUpdates('Orders', row._rowIndex, { PlanVersionId: versionId });
+  row.PlanVersionId = versionId;
+}
+
 function setSheetComplete(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
@@ -223,6 +245,24 @@ function setSheetComplete(payload) {
     throw new Error('Invalid sheet index');
   }
   var sheets = getOrderActiveSheets(row);
+  if (idx >= sheets.length) {
+    throw new Error('Invalid sheet index');
+  }
+
+  // Whatever the operator was actually looking at when they hit "mark
+  // done" (W/H/T, part outputs, qty-per-sheet) is what really got cut -
+  // persist it into the plan right now, since stock/ledger booking below
+  // must use these corrected numbers too, not the stale saved ones. The
+  // only other way to save sheet-structure edits (the separate "Save as
+  // New Plan Version" button) is an easy-to-forget extra click; this makes
+  // the moment of marking a sheet done also the moment its data locks in.
+  // Scoped to only the one sheet being marked done - never touches any
+  // other sheet's data, and only on the completing (not un-completing) edge.
+  if (payload.completed && payload.sheetData) {
+    sheets[idx] = payload.sheetData;
+    persistOrderActiveSheets(row, sheets);
+  }
+
   var totalSheets = sheets.length;
   var completion = parseJsonSafe(row.SheetCompletion, []);
   completion[idx] = !!payload.completed;

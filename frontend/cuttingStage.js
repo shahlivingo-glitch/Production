@@ -457,6 +457,16 @@ function toggleSheetComplete(sheetIndex, completed, actualSheetsCut) {
   if (completed && actualSheetsCut !== undefined && actualSheetsCut !== null) {
     payload.actualSheetsCut = actualSheetsCut;
   }
+  // workingSheets[sheetIndex] already reflects every live edit made to this
+  // sheet's W/H/T and part-output rows (each input updates it directly as
+  // the operator types - see buildPlanSheetCard/buildPlanOutputRow), even
+  // if "Save as New Plan Version" was never clicked. Send it along so
+  // setSheetComplete persists exactly what's on screen instead of the last
+  // actually-saved plan - otherwise those edits both get lost on reload AND
+  // never actually influenced the stock/ledger booking this triggers.
+  if (completed && workingSheets && workingSheets[sheetIndex]) {
+    payload.sheetData = workingSheets[sheetIndex];
+  }
   apiPost('setSheetComplete', payload).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     currentOrder = result.data;
