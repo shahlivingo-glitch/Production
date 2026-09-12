@@ -23,6 +23,8 @@ function initCuttingStage() {
   document.querySelectorAll('.cs-tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { selectTab(btn.dataset.tab); });
   });
+  el('extra-prompt-cut-continue-btn').addEventListener('click', confirmActualSheetsCut);
+  el('extra-prompt-cut-cancel-btn').addEventListener('click', cancelExtraPrompt);
   el('extra-prompt-skip-btn').addEventListener('click', skipExtraPrompt);
   el('extra-prompt-save-btn').addEventListener('click', saveExtraPromptAndProceed);
   el('extra-prompt-add-row-btn').addEventListener('click', function () {
@@ -45,12 +47,41 @@ function initCuttingStage() {
   showDashboard();
 }
 
+// Mark-done flow is two steps in this one modal: first "how many sheets did
+// you actually cut" (pre-filled with the planned/expected qty, editable),
+// then - only once that's confirmed - the existing extra-parts question.
+// The actual-cut number is what setSheetComplete uses to drive stock
+// booking, the Leftover Ledger, and the "need X, actual Y x qty/sheet" plan
+// summary, instead of the planned figure.
 function showExtraPartsModal(sheetIndex, onDone) {
   var sourceSheet = (activeVersion && activeVersion.sheets[sheetIndex]) || workingSheets[sheetIndex];
-  extraPromptState = { sheetIndex: sheetIndex, rows: [{ partName: '', qty: '' }], onDone: onDone };
-  el('extra-prompt-title').textContent = 'Extra parts from ' + sheetLabel(sourceSheet, sheetIndex) + '\'s full cutting run?';
-  renderExtraPromptRows();
+  var plan = computeSheetPlanClient(workingSheets, getCurrentOrderSheetMultiplier(), currentOrder.multiYieldDecisions || {}, currentOrder.sheetQtyOverrides || {});
+  var plannedQty = (plan[sheetIndex] && plan[sheetIndex].physicalSheets) || 0;
+
+  extraPromptState = { sheetIndex: sheetIndex, rows: [{ partName: '', qty: '' }], onDone: onDone, actualCut: null };
+
+  el('extra-prompt-title').textContent = 'Mark ' + sheetLabel(sourceSheet, sheetIndex) + ' as Done';
+  el('extra-prompt-cut-label').textContent = sheetLabel(sourceSheet, sheetIndex) + ' — Cut';
+  el('extra-prompt-actual-cut').value = plannedQty;
+  el('extra-prompt-cut-section').style.display = 'block';
+  el('extra-prompt-parts-section').style.display = 'none';
   el('extra-prompt-overlay').style.display = 'flex';
+}
+
+function confirmActualSheetsCut() {
+  var input = el('extra-prompt-actual-cut');
+  var val = Number(input.value);
+  if (input.value === '' || isNaN(val) || val < 0) {
+    alert('Enter a valid number of sheets cut (0 or more).');
+    return;
+  }
+  extraPromptState.actualCut = Math.round(val);
+
+  var sourceSheet = (activeVersion && activeVersion.sheets[extraPromptState.sheetIndex]) || workingSheets[extraPromptState.sheetIndex];
+  el('extra-prompt-title').textContent = 'Extra parts from ' + sheetLabel(sourceSheet, extraPromptState.sheetIndex) + '\'s full cutting run?';
+  el('extra-prompt-cut-section').style.display = 'none';
+  el('extra-prompt-parts-section').style.display = 'block';
+  renderExtraPromptRows();
 }
 
 function renderExtraPromptRows() {
@@ -130,8 +161,9 @@ function cancelExtraPrompt() {
 
 function skipExtraPrompt() {
   var onDone = extraPromptState.onDone;
+  var actualCut = extraPromptState.actualCut;
   closeExtraPromptModal();
-  onDone();
+  onDone(actualCut);
 }
 
 function saveExtraPromptAndProceed() {
@@ -142,11 +174,12 @@ function saveExtraPromptAndProceed() {
   }
   var sheetIndex = extraPromptState.sheetIndex;
   var onDone = extraPromptState.onDone;
+  var actualCut = extraPromptState.actualCut;
   var rowsToSave = extraPromptState.rows.filter(function (r) { return r.partName && Number(r.qty) > 0; });
 
   if (rowsToSave.length === 0) {
     closeExtraPromptModal();
-    onDone();
+    onDone(actualCut);
     return;
   }
 
@@ -176,11 +209,11 @@ function saveExtraPromptAndProceed() {
     closeExtraPromptModal();
     if (failed) showFatalError(failed.error);
     loadExtras();
-    onDone();
+    onDone(actualCut);
   }).catch(function (err) {
     closeExtraPromptModal();
     showFatalError(err);
-    onDone();
+    onDone(actualCut);
   });
 }
 
@@ -391,17 +424,17 @@ function markAllComplete() {
   }).catch(showFatalError);
 }
 
-function toggleSheetComplete(sheetIndex, completed) {
+function toggleSheetComplete(sheetIndex, completed, actualSheetsCut) {
   if (!canEdit('cuttingStage')) {
     showFatalError('View only - ask an admin for edit access to mark sheets complete.');
     renderPlanTab();
     return;
   }
-  apiPost('setSheetComplete', {
-    poNumber: currentOrder.poNumber,
-    sheetIndex: sheetIndex,
-    completed: completed
-  }).then(function (result) {
+  var payload = { poNumber: currentOrder.poNumber, sheetIndex: sheetIndex, completed: completed };
+  if (completed && actualSheetsCut !== undefined && actualSheetsCut !== null) {
+    payload.actualSheetsCut = actualSheetsCut;
+  }
+  apiPost('setSheetComplete', payload).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
     currentOrder = result.data;
     renderStatusPill();
@@ -440,7 +473,7 @@ function renderPlanTab() {
     body.appendChild(empty);
   }
 
-  var plan = computeSheetPlanClient(workingSheets, getCurrentOrderSheetMultiplier(), currentOrder.multiYieldDecisions || {});
+  var plan = computeSheetPlanClient(workingSheets, getCurrentOrderSheetMultiplier(), currentOrder.multiYieldDecisions || {}, currentOrder.sheetQtyOverrides || {});
   workingSheets.forEach(function (sheet, sheetIndex) {
     body.appendChild(buildPlanSheetCard(sheet, sheetIndex, plan[sheetIndex]));
   });
@@ -483,7 +516,7 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   doneCheckbox.disabled = !canEdit('cuttingStage');
   doneCheckbox.addEventListener('change', function (e) {
     if (e.target.checked) {
-      showExtraPartsModal(sheetIndex, function () { toggleSheetComplete(sheetIndex, true); });
+      showExtraPartsModal(sheetIndex, function (actualCut) { toggleSheetComplete(sheetIndex, true, actualCut); });
     } else {
       toggleSheetComplete(sheetIndex, false);
     }
@@ -545,8 +578,11 @@ function buildMultiYieldGuidance(sheetPlan) {
 
   sheetPlan.rows.forEach(function (r) {
     var l = document.createElement('div');
-    var txt = r.partName + ' — need ' + r.totalNeeded + ', ' + sheetPlan.physicalSheets +
-      ' × ' + r.yieldPerSheet + '/sheet = ' + r.produced;
+    // "actual" once this sheet's real cut count has replaced the calculated
+    // one (from PO creation, or from marking it done) - sheetPlan.overridden
+    // comes straight from computeSheetPlanClient's own override handling.
+    var txt = r.partName + ' — need ' + r.totalNeeded + ', ' + (sheetPlan.overridden ? 'actual ' : '') +
+      sheetPlan.physicalSheets + ' × ' + r.yieldPerSheet + '/sheet = ' + r.produced;
     if (r.surplus > 0) txt += ' (' + r.surplus + ' surplus → Leftover Ledger on mark-done)';
     else if (r.shortOnScrap > 0) txt += ' — ' + r.shortOnScrap + ' to cut on scrap';
     else txt += ' (exact)';

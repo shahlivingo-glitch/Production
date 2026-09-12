@@ -819,6 +819,13 @@ a { color: var(--color-accent); }
   animation: fadeIn var(--duration-base) var(--ease-out) both;
 }
 
+.po-sheet-qty-input {
+  width: 56px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
 .sheets-required-table, .po-table {
   width: 100%;
   border-collapse: collapse;

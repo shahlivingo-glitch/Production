@@ -1,7 +1,7 @@
 var TAB_HEADERS = {
   Models: ['ModelName', 'PartsPerUnit', 'UpdatedAt'],
   CuttingPlans: ['ModelName', 'PlanName', 'Sheets', 'UpdatedAt', 'PlanType', 'BaseQty'],
-  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'BendingCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'BendingStatus', 'CreatedAt', 'MultiYieldDecisions', 'SheetStockConsumed', 'PlanType', 'BulkBaseQty', 'BulkMultiplier'],
+  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'BendingCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'BendingStatus', 'CreatedAt', 'MultiYieldDecisions', 'SheetStockConsumed', 'PlanType', 'BulkBaseQty', 'BulkMultiplier', 'SheetQtyOverrides'],
   PlanVersions: ['VersionId', 'ModelName', 'VersionNumber', 'SourcePlanName', 'Sheets', 'CreatedAt', 'Note'],
   CuttingExtras: ['ExtraId', 'PoNumber', 'Type', 'Details', 'Timestamp'],
   ExtraPartInventory: ['ModelName', 'PartName', 'Size', 'Qty', 'UpdatedAt'],

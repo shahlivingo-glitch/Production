@@ -15,11 +15,38 @@ function multiYieldDecisionKey(sheetIndex, outputIndex) {
   return sheetIndex + ':' + outputIndex;
 }
 
+// Orders.SheetQtyOverrides is a { "<sheetIndex>": physicalSheets } map that
+// replaces the auto-calculated physical sheet count for that sheet-type,
+// wherever it's set. Refined over an order's life: the PO form can set an
+// entry at creation (a manual override of the calculated default), and
+// Cutting Stage overwrites it with the actual sheets cut once that sheet is
+// marked done - always the latest known truth for that sheet-type. Sanitize
+// on the way in so a bad/stale key or a negative or non-numeric value never
+// reaches the sheet math.
+function sanitizeSheetQtyOverrides(raw, sheetCount) {
+  var out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.keys(raw).forEach(function (k) {
+    var idx = Number(k);
+    if (isNaN(idx) || idx < 0 || (sheetCount !== undefined && idx >= sheetCount)) return;
+    var v = Number(raw[k]);
+    if (isNaN(v) || v < 0) return;
+    out[String(idx)] = v;
+  });
+  return out;
+}
+
 // Per sheet-type breakdown for a PO. decisionsMap is Orders.MultiYieldDecisions
 // (may be {} or a partial { "s:o": "extra-sheet"|"scrap" } from the PO form).
-function computeOrderSheetPlan(sheets, poQty, decisionsMap) {
+// physicalOverrides is Orders.SheetQtyOverrides (see above) - when a sheet-
+// index has an entry, it replaces the calculated physicalSheets for that
+// sheet-type before the per-row produced/surplus/shortOnScrap math runs, so
+// every downstream number (stock need, Leftover Ledger surplus, the "need X,
+// actual Y x qty/sheet" summary) is consistent with the override.
+function computeOrderSheetPlan(sheets, poQty, decisionsMap, physicalOverrides) {
   poQty = Number(poQty) || 0;
   decisionsMap = decisionsMap || {};
+  physicalOverrides = physicalOverrides || {};
 
   return (sheets || []).map(function (sheet, sheetIndex) {
     var outputs = sheet.outputs || [];
@@ -68,6 +95,10 @@ function computeOrderSheetPlan(sheets, poQty, decisionsMap) {
     }
 
     var physicalSheets = baseSheets + (choice === 'extra-sheet' ? 1 : 0);
+    var overridden = physicalOverrides[String(sheetIndex)];
+    if (overridden !== undefined) {
+      physicalSheets = overridden;
+    }
 
     rows.forEach(function (r) {
       r.isBinding = !!(binding && r.outputIndex === binding.outputIndex);
@@ -84,6 +115,7 @@ function computeOrderSheetPlan(sheets, poQty, decisionsMap) {
       thickness: Number(sheet.thickness) || 0,
       baseSheets: baseSheets,
       physicalSheets: physicalSheets,
+      overridden: overridden !== undefined,
       decisionKey: decisionKey,
       bindingRemainder: bindingRemainder,
       choice: choice,
@@ -93,9 +125,9 @@ function computeOrderSheetPlan(sheets, poQty, decisionsMap) {
 }
 
 // { sizeKey: totalPhysicalSheetsNeeded } across every sheet-type in the plan.
-function computeOrderStockNeed(sheets, poQty, decisionsMap) {
+function computeOrderStockNeed(sheets, poQty, decisionsMap, physicalOverrides) {
   var need = {};
-  computeOrderSheetPlan(sheets, poQty, decisionsMap).forEach(function (s) {
+  computeOrderSheetPlan(sheets, poQty, decisionsMap, physicalOverrides).forEach(function (s) {
     need[s.sizeKey] = (need[s.sizeKey] || 0) + s.physicalSheets;
   });
   return need;

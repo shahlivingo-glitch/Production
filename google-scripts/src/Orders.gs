@@ -34,6 +34,7 @@ function orderRowToObject(r) {
     createdAt: r.CreatedAt,
     multiYieldDecisions: multiYieldDecisions,
     sheetStockConsumed: parseJsonSafe(r.SheetStockConsumed, {}),
+    sheetQtyOverrides: parseJsonSafe(r.SheetQtyOverrides, {}),
     hasPendingMultiYield: hasPendingMultiYield(multiYieldDecisions),
     planType: r.PlanType === 'bulk' ? 'bulk' : 'per-unit',
     bulkBaseQty: Number(r.BulkBaseQty) || 0,
@@ -139,8 +140,12 @@ function createOrder(payload) {
 
   var sheets = parseJsonSafe(plan.Sheets, []);
   var multiYieldDecisions = buildMultiYieldDecisions(sheets, sheetMultiplier, payload.multiYieldDecisions || {});
+  // Manual per-sheet overrides from the PO form's editable "Sheets Required"
+  // qty fields (only entries the user actually touched away from the
+  // calculated default land here - see sanitizeSheetQtyOverrides).
+  var sheetQtyOverrides = sanitizeSheetQtyOverrides(payload.sheetQtyOverrides, sheets.length);
   var totalSheetsRequired = 0;
-  computeOrderSheetPlan(sheets, sheetMultiplier, multiYieldDecisions).forEach(function (s) {
+  computeOrderSheetPlan(sheets, sheetMultiplier, multiYieldDecisions, sheetQtyOverrides).forEach(function (s) {
     totalSheetsRequired += s.physicalSheets;
   });
 
@@ -165,7 +170,8 @@ function createOrder(payload) {
     SheetStockConsumed: JSON.stringify({}),
     PlanType: planType,
     BulkBaseQty: planType === 'bulk' ? baseQty : 0,
-    BulkMultiplier: bulkMultiplier
+    BulkMultiplier: bulkMultiplier,
+    SheetQtyOverrides: JSON.stringify(sheetQtyOverrides)
   });
 
   return getOrder(poNumber);
@@ -178,14 +184,14 @@ function createOrder(payload) {
 // SheetStockConsumed guards re-checks. Not reversed on uncheck (matches the
 // existing mark-done extras prompt). Best-effort: a stock/ledger failure must
 // never block the checkbox.
-function applyCutStockAndLedger(row, sheetIndex, sheets, consumed) {
+function applyCutStockAndLedger(row, sheetIndex, sheets, consumed, overrides) {
   if (consumed[String(sheetIndex)]) {
     return consumed;
   }
   try {
     var multiplier = getOrderSheetMultiplier(row);
     var decisions = parseJsonSafe(row.MultiYieldDecisions, {});
-    var sheetPlan = computeOrderSheetPlan(sheets, multiplier, decisions)[sheetIndex];
+    var sheetPlan = computeOrderSheetPlan(sheets, multiplier, decisions, overrides)[sheetIndex];
     if (sheetPlan) {
       if (sheetPlan.physicalSheets > 0) {
         applySheetStockDelta(
@@ -224,10 +230,28 @@ function setSheetComplete(payload) {
     SheetCompletion: JSON.stringify(completion),
     CuttingStatus: computeCuttingStatus(completion, totalSheets)
   };
+  var overrides = sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), totalSheets);
   if (payload.completed) {
+    // The actual sheets cut, entered on the Cutting Stage "mark done" prompt
+    // right before the extra-parts question - overwrites any earlier
+    // estimate (from PO creation, or a previous mark-done) for this sheet,
+    // since it's the most authoritative number available at cut time.
+    if (payload.actualSheetsCut !== undefined && payload.actualSheetsCut !== null && payload.actualSheetsCut !== '') {
+      var actualVal = Number(payload.actualSheetsCut);
+      if (!isNaN(actualVal) && actualVal >= 0) {
+        overrides[String(idx)] = actualVal;
+        updates.SheetQtyOverrides = JSON.stringify(overrides);
+      }
+    }
     var consumed = parseJsonSafe(row.SheetStockConsumed, {});
-    applyCutStockAndLedger(row, idx, sheets, consumed);
+    applyCutStockAndLedger(row, idx, sheets, consumed, overrides);
     updates.SheetStockConsumed = JSON.stringify(consumed);
+    var decisions = parseJsonSafe(row.MultiYieldDecisions, {});
+    var total = 0;
+    computeOrderSheetPlan(sheets, getOrderSheetMultiplier(row), decisions, overrides).forEach(function (s) {
+      total += s.physicalSheets;
+    });
+    updates.TotalSheetsRequired = total;
   }
   writeRowUpdates('Orders', row._rowIndex, updates);
   return getOrder(payload.poNumber);
@@ -242,9 +266,10 @@ function markAllSheetsComplete(payload) {
   var totalSheets = sheets.length;
   var filled = [];
   var consumed = parseJsonSafe(row.SheetStockConsumed, {});
+  var overrides = sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), totalSheets);
   for (var i = 0; i < totalSheets; i++) {
     filled.push(true);
-    applyCutStockAndLedger(row, i, sheets, consumed);
+    applyCutStockAndLedger(row, i, sheets, consumed, overrides);
   }
   writeRowUpdates('Orders', row._rowIndex, {
     SheetCompletion: JSON.stringify(filled),
@@ -273,7 +298,8 @@ function setMultiYieldDecision(payload) {
     // row of its sheet-type for a decision to be valid.
     var sheetIndex = Number(String(payload.key).split(':')[0]);
     var sheets = getOrderActiveSheets(row);
-    var sheetPlan = computeOrderSheetPlan(sheets, getOrderSheetMultiplier(row), {})[sheetIndex];
+    var existingOverrides = sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), sheets.length);
+    var sheetPlan = computeOrderSheetPlan(sheets, getOrderSheetMultiplier(row), {}, existingOverrides)[sheetIndex];
     if (!sheetPlan || sheetPlan.decisionKey !== payload.key) {
       throw new Error('No multi-yield remainder at ' + payload.key);
     }
@@ -291,8 +317,10 @@ function setMultiYieldDecision(payload) {
   entry.choice = payload.choice;
   entry.decidedAt = nowIso();
 
+  var activeSheets = getOrderActiveSheets(row);
+  var overridesForTotal = sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), activeSheets.length);
   var total = 0;
-  computeOrderSheetPlan(getOrderActiveSheets(row), getOrderSheetMultiplier(row), decisions).forEach(function (s) {
+  computeOrderSheetPlan(activeSheets, getOrderSheetMultiplier(row), decisions, overridesForTotal).forEach(function (s) {
     total += s.physicalSheets;
   });
   writeRowUpdates('Orders', row._rowIndex, {

@@ -236,9 +236,10 @@ function sheetSizeKeyClient(w, h, t) {
   return (Number(w) || 0) + 'x' + (Number(h) || 0) + 'x' + (Number(t) || 0);
 }
 
-function computeSheetPlanClient(sheets, qty, decisions) {
+function computeSheetPlanClient(sheets, qty, decisions, physicalOverrides) {
   qty = Number(qty) || 0;
   decisions = decisions || {};
+  physicalOverrides = physicalOverrides || {};
   return (sheets || []).map(function (sheet, sheetIndex) {
     var outputs = sheet.outputs || [];
 
@@ -288,6 +289,10 @@ function computeSheetPlanClient(sheets, qty, decisions) {
     }
 
     var physicalSheets = baseSheets + (choice === 'extra-sheet' ? 1 : 0);
+    var overridden = physicalOverrides[String(sheetIndex)];
+    if (overridden !== undefined) {
+      physicalSheets = overridden;
+    }
 
     rows.forEach(function (r) {
       r.isBinding = binding && r.outputIndex === binding.outputIndex;
@@ -306,6 +311,7 @@ function computeSheetPlanClient(sheets, qty, decisions) {
       thickness: Number(sheet.thickness) || 0,
       baseSheets: baseSheets,
       physicalSheets: physicalSheets,
+      overridden: overridden !== undefined,
       decisionKey: decisionKey,
       bindingRemainder: bindingRemainder,
       choice: choice,
@@ -314,9 +320,9 @@ function computeSheetPlanClient(sheets, qty, decisions) {
   });
 }
 
-function computeStockNeedClient(sheets, qty, decisions) {
+function computeStockNeedClient(sheets, qty, decisions, physicalOverrides) {
   var need = {};
-  computeSheetPlanClient(sheets, qty, decisions).forEach(function (s) {
+  computeSheetPlanClient(sheets, qty, decisions, physicalOverrides).forEach(function (s) {
     need[s.sizeKey] = (need[s.sizeKey] || 0) + s.physicalSheets;
   });
   return need;

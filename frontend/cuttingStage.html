@@ -107,12 +107,27 @@
   <div class="modal-overlay" id="extra-prompt-overlay" style="display:none;">
     <div class="modal-box">
       <h3 id="extra-prompt-title"></h3>
-      <div class="section-hint">Optional — record any extra parts that came out of this sheet's full cutting run, beyond the plan.</div>
-      <div id="extra-prompt-rows"></div>
-      <button class="btn-secondary" id="extra-prompt-add-row-btn">+ Add Another Part</button>
-      <div class="modal-actions">
-        <button class="btn-secondary" id="extra-prompt-skip-btn">Skip</button>
-        <button class="btn-primary" id="extra-prompt-save-btn">Save &amp; Mark Done</button>
+
+      <div id="extra-prompt-cut-section">
+        <div class="field-row">
+          <label for="extra-prompt-actual-cut" id="extra-prompt-cut-label">Sheets actually cut</label>
+          <input type="number" id="extra-prompt-actual-cut" min="0">
+        </div>
+        <div class="section-hint">Pre-filled with the planned qty — edit if the actual cutting run differed.</div>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="extra-prompt-cut-cancel-btn">Cancel</button>
+          <button class="btn-primary" id="extra-prompt-cut-continue-btn">Continue</button>
+        </div>
+      </div>
+
+      <div id="extra-prompt-parts-section" style="display:none;">
+        <div class="section-hint">Optional — record any extra parts that came out of this sheet's full cutting run, beyond the plan.</div>
+        <div id="extra-prompt-rows"></div>
+        <button class="btn-secondary" id="extra-prompt-add-row-btn">+ Add Another Part</button>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="extra-prompt-skip-btn">Skip</button>
+          <button class="btn-primary" id="extra-prompt-save-btn">Save &amp; Mark Done</button>
+        </div>
       </div>
     </div>
   </div>

@@ -242,7 +242,8 @@ animation library added; stays framework-free like the rest of the app.
   *active plan version's* sheets and reset together whenever that version
   changes. PlanType, BulkBaseQty, BulkMultiplier: snapshotted from the
   plan **at creation** — see Bulk Unit Plan below; `Qty` always means the
-  real total unit count either way.
+  real total unit count either way. SheetQtyOverrides (JSON
+  `{ "<sheetIndex>": physicalSheets }` — see Sheet Qty Overrides below).
 - `PlanVersions`: VersionId, ModelName, VersionNumber (per-model
   counter, 1-based), SourcePlanName, Sheets (same shape as
   CuttingPlans.Sheets), CreatedAt, Note. Only ever created by an
@@ -304,6 +305,39 @@ produced, **30 surplus Top → Leftover Ledger**. No decision prompt.
 Stock deducts in `applyCutStockAndLedger` (from `setSheetComplete` /
 `markAllSheetsComplete`), best-effort — a stock/ledger error never
 blocks the completion checkbox.
+
+### Sheet Qty Overrides
+
+`Orders.SheetQtyOverrides` (JSON `{ "<sheetIndex>": physicalSheets }`)
+replaces the calculated `physicalSheets` for that sheet-type wherever an
+entry exists, for **every** downstream consumer of the sheet math — it's a
+4th param on both `computeOrderSheetPlan` (MultiYield.gs) and
+`computeSheetPlanClient` (app.js): `computeOrderSheetPlan(sheets, poQty,
+decisionsMap, physicalOverrides)`. Applied *after* the natural
+base/decision math, right before the per-row `produced`/`surplus`/
+`shortOnScrap` numbers are derived — so every one of those stays
+consistent with whichever number wins. `sanitizeSheetQtyOverrides(raw,
+sheetCount)` drops out-of-range indices and non-numeric/negative values
+before anything reaches the math or gets stored. A sheet-plan entry's
+`overridden` flag (true when that sheet-index has an override) drives the
+"actual" vs. calculated wording in the UI.
+
+One field, refined twice over an order's life:
+1. **PO creation** — the "Sheets Required" section's per-sheet qty is
+   editable (pre-filled with the calculated default); `createOrder` sanitizes
+   `payload.sheetQtyOverrides` and stores whatever the user actually touched.
+2. **Cutting Stage mark-done** — checking a sheet's "done" box first asks
+   "Sheets actually cut" (pre-filled with the sheet's current — possibly
+   already-overridden — planned qty, editable) *before* the existing
+   extra-parts question; `setSheetComplete`'s `payload.actualSheetsCut`
+   overwrites that sheet's entry, since it's the most authoritative number
+   available at cut time. This is what actually drives stock deduction and
+   Leftover Ledger surplus in `applyCutStockAndLedger` — not the calculated
+   figure.
+
+`markAllSheetsComplete` (bulk "mark all complete") does **not** collect a
+per-sheet actual-cut value — it applies whatever's already in
+`SheetQtyOverrides` (creation-time overrides, or nothing) unchanged.
 
 ### Bulk Unit Plan
 
@@ -480,9 +514,20 @@ rather than assuming the write logic is wrong.
 10. **Appending a column to a tab that already has data is safe;
    reordering is not.** `rowsToObjects` maps by header *name*, and a
    missing trailing cell reads as `undefined` (→ `parseJsonSafe(…, {})`).
-   `MultiYieldDecisions` / `SheetStockConsumed` were added to the *end*
-   of `TAB_HEADERS.Orders` for exactly this reason — no capture/repair
-   dance. Gotcha #2's dance is only for mid-array inserts/reorders.
+   `MultiYieldDecisions` / `SheetStockConsumed` / `SheetQtyOverrides` were
+   added to the *end* of `TAB_HEADERS.Orders` for exactly this reason — no
+   capture/repair dance. Gotcha #2's dance is only for mid-array
+   inserts/reorders. **But this only works after `runSetup` actually runs
+   again** — `rowsToObjects` builds each row object's keys from the
+   *live sheet's own row 1*, not from `TAB_HEADERS`, so adding a name to
+   `TAB_HEADERS` alone does nothing for reads until `setupSpreadsheet()`
+   re-writes row 1 to include it (`appendRow`/`writeRowUpdates` use
+   `TAB_HEADERS` directly for column *position*, so a write into the new
+   column silently succeeds even before that — it's just unreadable until
+   the header catches up, which looks exactly like "the value didn't
+   save"). Hit live when `SheetQtyOverrides` was added: `createOrder`
+   correctly computed and stored it, but `getOrder` echoed back `{}` until
+   `GET ?action=runSetup` was called once against the live deployment.
 11. **`SheetService.gs` per-execution read cache** (`_sheetRowCache`):
    `getAllRows` reads each tab once per request; writes
    (`appendRow`/`writeRowUpdates`/`deleteRowsWhere`) invalidate that

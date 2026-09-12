@@ -9,6 +9,7 @@ var selectedPlanBaseQty = 0;
 var bulkMultiplier = 1;
 var plansLoadError = null; // { modelName, message } - set when cuttingConfigPlans fails, so the dropdown isn't stuck on "Loading..." with no way out
 var sheetsLoadError = null; // { modelName, planName, message } - same idea for the sheets-required section
+var sheetQtyOverrides = {}; // { sheetIndex: number } - manual overrides of the calculated "Sheets Required" qty, entered on this form; reset whenever the model/plan/qty changes since the calculated baseline they were overriding no longer applies
 
 function initOrdersForm() {
   loadModels();
@@ -89,6 +90,7 @@ function startNewDraft() {
   plans = [];
   selectedModelSheets = null;
   multiYieldChoices = {};
+  sheetQtyOverrides = {};
   plansLoadError = null;
   sheetsLoadError = null;
   setSelectedPlanType('per-unit', 0);
@@ -106,6 +108,7 @@ function onModelChange() {
     el('po-plan-row').style.display = 'none';
     plans = [];
     selectedModelSheets = null;
+    sheetQtyOverrides = {};
     plansLoadError = null;
     sheetsLoadError = null;
     setSelectedPlanType('per-unit', 0);
@@ -124,6 +127,7 @@ function loadPlansForModel(modelName) {
   var planSelect = el('po-plan');
   planSelect.innerHTML = '<option value="">Loading…</option>';
   selectedModelSheets = undefined;
+  sheetQtyOverrides = {};
   plansLoadError = null;
   sheetsLoadError = null;
   renderSheetsRequired();
@@ -200,6 +204,7 @@ function loadSheetsForPlan(modelName, planName) {
   selectedModelSheets = undefined;
   sheetsLoadError = null;
   multiYieldChoices = {};
+  sheetQtyOverrides = {};
   renderSheetsRequired();
   apiGet('cuttingConfigPlan', { modelName: modelName, planName: planName }).then(function (result) {
     if (el('po-model').value !== modelName || el('po-plan').value !== planName) return;
@@ -314,7 +319,7 @@ function renderSheetsRequired() {
     return;
   }
 
-  var plan = computeSheetPlanClient(selectedModelSheets, effectiveN, multiYieldChoices);
+  var plan = computeSheetPlanClient(selectedModelSheets, effectiveN, multiYieldChoices, sheetQtyOverrides);
 
   var box = document.createElement('div');
   box.className = 'sheets-required-box';
@@ -331,10 +336,41 @@ function renderSheetsRequired() {
     var line = document.createElement('div');
     line.style.display = 'flex';
     line.style.justifyContent = 'space-between';
+    line.style.alignItems = 'center';
     line.style.fontSize = '13px';
     line.style.padding = '4px 0';
-    line.innerHTML = '<span>' + sheetLabel(selectedModelSheets[index], index) + '</span>' +
-      '<span><strong>' + sheetPlan.physicalSheets + '</strong> sheet' + (sheetPlan.physicalSheets === 1 ? '' : 's') + '</span>';
+    line.style.gap = 'var(--space-2)';
+
+    var labelSpan = document.createElement('span');
+    labelSpan.textContent = sheetLabel(selectedModelSheets[index], index);
+    line.appendChild(labelSpan);
+
+    var qtyWrap = document.createElement('span');
+    qtyWrap.style.display = 'flex';
+    qtyWrap.style.alignItems = 'center';
+    qtyWrap.style.gap = '6px';
+
+    // Auto-calculated by default, but editable - overriding it re-derives
+    // everything below (per-part surplus, Total sheets to cut, and the Raw
+    // Sheet Stock need/shortfall) from the typed value instead.
+    var qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.min = '0';
+    qtyInput.className = 'po-sheet-qty-input';
+    qtyInput.title = 'Override the calculated sheet count for this sheet type';
+    qtyInput.value = sheetPlan.physicalSheets;
+    qtyInput.addEventListener('change', function (e) {
+      var v = Math.max(0, Math.round(Number(e.target.value) || 0));
+      sheetQtyOverrides[sheetPlan.sheetIndex] = v;
+      renderSheetsRequired();
+    });
+    qtyWrap.appendChild(qtyInput);
+
+    var qtyUnitLabel = document.createElement('span');
+    qtyUnitLabel.textContent = 'sheet' + (sheetPlan.physicalSheets === 1 ? '' : 's');
+    qtyWrap.appendChild(qtyUnitLabel);
+
+    line.appendChild(qtyWrap);
     box.appendChild(line);
 
     box.appendChild(buildSheetYieldDetail(sheetPlan));
@@ -506,7 +542,8 @@ function createPO() {
     colourPlan: el('po-colour').value,
     deliveryDeadline: el('po-deadline').value,
     partyName: el('po-party').value,
-    multiYieldDecisions: multiYieldChoices
+    multiYieldDecisions: multiYieldChoices,
+    sheetQtyOverrides: sheetQtyOverrides
   };
   if (isBulk) {
     payload.bulkMultiplier = bulkMultiplier;
@@ -562,6 +599,7 @@ function renderPoTable() {
 
 function setBulkMultiplier(value) {
   bulkMultiplier = Math.max(1, Math.round(Number(value) || 1));
+  sheetQtyOverrides = {}; // the calculated baseline every override was relative to just changed
   renderQtyControl();
   renderSheetsRequired();
 }
@@ -569,7 +607,10 @@ function setBulkMultiplier(value) {
 document.addEventListener('DOMContentLoaded', function () {
   el('po-model').addEventListener('change', onModelChange);
   el('po-plan').addEventListener('change', onPlanChange);
-  el('po-qty').addEventListener('input', renderSheetsRequired);
+  el('po-qty').addEventListener('input', function () {
+    sheetQtyOverrides = {}; // ditto - qty changed, so any manual sheet-count overrides no longer apply
+    renderSheetsRequired();
+  });
   el('po-bulk-multiplier').addEventListener('input', function (e) { setBulkMultiplier(e.target.value); });
   el('po-bulk-minus-btn').addEventListener('click', function () { setBulkMultiplier(bulkMultiplier - 1); });
   el('po-bulk-plus-btn').addEventListener('click', function () { setBulkMultiplier(bulkMultiplier + 1); });
