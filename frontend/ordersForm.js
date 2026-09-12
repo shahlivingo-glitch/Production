@@ -12,10 +12,48 @@ var sheetsLoadError = null; // { modelName, planName, message } - same idea for 
 var sheetQtyOverrides = {}; // { sheetIndex: number } - manual overrides of the calculated "Sheets Required" qty, entered on this form; reset whenever the model/plan/qty changes since the calculated baseline they were overriding no longer applies
 
 function initOrdersForm() {
-  loadModels();
-  loadOrders();
-  loadSheetStockForForm();
-  startNewDraft();
+  // startNewDraft's own previewNextPoNumber fetch is skipped here - the
+  // bundle below carries it too, so the initial page load doesn't pay for
+  // both.
+  startNewDraft(true);
+  loadOrdersFormBundle();
+}
+
+// Initial-load models/orders/sheetStock/nextPoNumber used to be 4 separate
+// parallel round trips - each still pays Apps Script's ~3-5s-per-call
+// dispatch overhead regardless of running in parallel, so this was the
+// slowest part of opening the page. One bundled call instead (mirrors
+// Cutting Stage's orderDetailBundle). loadOrders()/loadSheetStockForForm()
+// stay as their own functions below - createPO() still calls them
+// individually to refresh just those two after creating a PO, without
+// re-fetching models or a stale next-PO-number.
+function loadOrdersFormBundle() {
+  el('po-loading').style.display = 'flex';
+  el('po-error').style.display = 'none';
+  el('po-table-wrap').style.display = 'none';
+  el('po-table-empty').style.display = 'none';
+
+  apiGet('ordersFormBundle', {}).then(function (result) {
+    el('po-loading').style.display = 'none';
+    if (!result.ok) {
+      el('po-error').textContent = 'Could not load Production Orders: ' + result.error;
+      el('po-error').style.display = 'block';
+      return;
+    }
+    var bundle = result.data;
+    models = bundle.models;
+    renderModelDropdown();
+    allOrders = bundle.orders;
+    renderPoTable();
+    sheetStockMap = {};
+    bundle.sheetStock.forEach(function (r) { sheetStockMap[r.size] = r.qty; });
+    renderSheetsRequired();
+    el('po-number').value = bundle.nextPoNumber;
+  }).catch(function (err) {
+    el('po-loading').style.display = 'none';
+    el('po-error').textContent = 'Could not load Production Orders: ' + (err && err.message ? err.message : err);
+    el('po-error').style.display = 'block';
+  });
 }
 
 function loadSheetStockForForm() {
@@ -49,14 +87,6 @@ function loadOrders() {
   });
 }
 
-function loadModels() {
-  apiGet('cuttingConfigModels', {}).then(function (result) {
-    if (!result.ok) return showFatalError(result.error);
-    models = result.data;
-    renderModelDropdown();
-  }).catch(showFatalError);
-}
-
 function renderModelDropdown() {
   var select = el('po-model');
   var currentValue = select.value;
@@ -77,7 +107,10 @@ function renderModelDropdown() {
   select.value = currentValue;
 }
 
-function startNewDraft() {
+// skipPoNumberFetch: true when the caller already has (or will shortly get)
+// a fresh next-PO-number from elsewhere - initOrdersForm's initial load gets
+// it from the ordersFormBundle instead of paying for a 5th round trip here.
+function startNewDraft(skipPoNumberFetch) {
   el('po-number').value = 'Loading…';
   el('po-datetime').value = new Date().toLocaleString();
   el('po-model').value = '';
@@ -95,6 +128,8 @@ function startNewDraft() {
   sheetsLoadError = null;
   setSelectedPlanType('per-unit', 0);
   renderSheetsRequired();
+
+  if (skipPoNumberFetch) return;
 
   apiGet('previewNextPoNumber', {}).then(function (result) {
     if (!result.ok) return showFatalError(result.error);

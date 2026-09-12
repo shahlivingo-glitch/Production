@@ -227,9 +227,16 @@ function setSheetComplete(payload) {
   var completion = parseJsonSafe(row.SheetCompletion, []);
   completion[idx] = !!payload.completed;
   var updates = {
-    SheetCompletion: JSON.stringify(completion),
-    CuttingStatus: computeCuttingStatus(completion, totalSheets)
+    SheetCompletion: JSON.stringify(completion)
   };
+  // Checking off an individual sheet never flips the PO to "complete" on
+  // its own, even if this happens to be the last one still pending -
+  // completing the PO is now a deliberate act, only markAllSheetsComplete
+  // does that. Un-checking one, though, still drops CuttingStatus back to
+  // pending if it had been complete, since the PO genuinely isn't anymore.
+  if (!payload.completed && row.CuttingStatus === 'complete') {
+    updates.CuttingStatus = 'pending';
+  }
   var overrides = sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), totalSheets);
   if (payload.completed) {
     // The actual sheets cut, entered on the Cutting Stage "mark done" prompt

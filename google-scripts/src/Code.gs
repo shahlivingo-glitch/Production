@@ -27,6 +27,29 @@ function getOrderDetailBundle(poNumber) {
   };
 }
 
+// Same idea as getOrderDetailBundle: the Production Order Form's initial
+// load used to fire 4 parallel round trips (models, orders, sheet stock,
+// next PO number) - each still pays Apps Script's ~3-5s-per-call dispatch
+// overhead regardless of running in parallel client-side. One execution,
+// one round trip.
+function getOrdersFormBundle() {
+  return {
+    models: listCuttingConfigModels(),
+    orders: listOrders(),
+    sheetStock: listSheetStock(),
+    nextPoNumber: generatePoNumber()
+  };
+}
+
+// Raw Sheet Stock's initial load: 2 parallel calls (on-hand levels + recent
+// movements) collapsed into 1, same reasoning as above.
+function getSheetStockBundle(limit) {
+  return {
+    stock: listSheetStock(),
+    log: listSheetStockLog(limit)
+  };
+}
+
 // --- Access control -------------------------------------------------------
 // Every action requires a valid session token EXCEPT the 3 below (you can't
 // have a token before you've logged in, or before the very first admin
@@ -58,6 +81,7 @@ var ACTION_MENUS = {
   order: ['orders', 'view'],
   createOrder: ['orders', 'edit'],
   previewNextPoNumber: ['orders', 'view'],
+  ordersFormBundle: ['orders', 'view'],
 
   // Cutting Stage
   pendingOrders: ['cuttingStage', 'view'],
@@ -86,6 +110,7 @@ var ACTION_MENUS = {
 
   // Raw Sheet Stock
   sheetStockLog: ['sheetStock', 'view'],
+  sheetStockBundle: ['sheetStock', 'view'],
   receiveSheetStock: ['sheetStock', 'edit'],
   adjustSheetStock: ['sheetStock', 'edit']
   // cuttingConfigModels/cuttingConfigPlans/cuttingConfigPlan/sheetStock and
@@ -132,6 +157,7 @@ var GET_ACTIONS = {
   order: function (p) { return getOrder(p.poNumber); },
   orderDetailBundle: function (p) { return getOrderDetailBundle(p.poNumber); },
   previewNextPoNumber: function (p) { return previewNextPoNumber(); },
+  ordersFormBundle: function (p) { return getOrdersFormBundle(); },
   planVersionsForModel: function (p) { return listPlanVersionsForModel(p.modelName); },
   planVersion: function (p) { return getPlanVersion(p.versionId); },
   cuttingExtras: function (p) { return listCuttingExtras(p.poNumber); },
@@ -141,6 +167,7 @@ var GET_ACTIONS = {
   bendingQueueForOrder: function (p) { return getBendingQueueForOrder(p.poNumber); },
   sheetStock: function (p) { return listSheetStock(); },
   sheetStockLog: function (p) { return listSheetStockLog(p.limit); },
+  sheetStockBundle: function (p) { return getSheetStockBundle(p.limit); },
   listUsers: function (p) { return listUsers(p); },
   runSetup: function (p) {
     setupSpreadsheet();

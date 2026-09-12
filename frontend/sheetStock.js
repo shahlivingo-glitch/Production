@@ -4,24 +4,25 @@ function initSheetStock() {
   loadSheetStock();
 }
 
+// Used to be Promise.all of 2 separate calls (on-hand levels + recent
+// movements) - parallel client-side, but each still pays Apps Script's own
+// ~3-5s-per-call dispatch overhead, so 2 in parallel was still slower than
+// 1 bundled round trip (mirrors orderDetailBundle/ordersFormBundle).
 function loadSheetStock() {
   el('stock-loading').style.display = 'flex';
   el('stock-error').style.display = 'none';
   el('stock-table-wrap').style.display = 'none';
   el('stock-empty').style.display = 'none';
 
-  Promise.all([
-    apiGet('sheetStock', {}),
-    apiGet('sheetStockLog', { limit: 50 })
-  ]).then(function (results) {
+  apiGet('sheetStockBundle', { limit: 50 }).then(function (result) {
     el('stock-loading').style.display = 'none';
-    if (!results[0].ok) {
-      el('stock-error').textContent = 'Could not load stock: ' + results[0].error;
+    if (!result.ok) {
+      el('stock-error').textContent = 'Could not load stock: ' + result.error;
       el('stock-error').style.display = 'block';
       return;
     }
-    renderStockTable(results[0].data);
-    renderLogTable(results[1].ok ? results[1].data : []);
+    renderStockTable(result.data.stock);
+    renderLogTable(result.data.log);
   }).catch(function (err) {
     el('stock-loading').style.display = 'none';
     el('stock-error').textContent = 'Could not load stock: ' + (err && err.message ? err.message : err);
