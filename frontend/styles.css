@@ -621,6 +621,16 @@ a { color: var(--color-accent); }
   color: var(--color-primary);
 }
 
+.cs-actual-cut-save-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.cs-actual-cut-save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .cs-output-row, .output-row {
   display: flex;
   align-items: center;

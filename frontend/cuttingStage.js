@@ -12,6 +12,7 @@ var planDirty = false;
 var extraPromptState = null;
 var extraPartFormState = null;
 var leftoverByPart = {}; // { partName: qty } already sitting in the Leftover Ledger for the current order's model - informational only, see buildPlanOutputRow
+var actualCutDrafts = {}; // { sheetIndex: typed value } - unsaved "Actual cut" edits, staged locally until that sheet's own Save button is clicked (see buildPlanSheetCard/saveSheetQtyOverride). Cleared whenever sheet indices could no longer line up with what's staged: opening an order, saving a new plan version, or adding/removing a sheet.
 
 function initCuttingStage() {
   el('back-to-dashboard-btn').addEventListener('click', function () {
@@ -36,7 +37,7 @@ function initCuttingStage() {
     if (e.target === el('extra-prompt-overlay')) cancelExtraPrompt();
   });
   window.addEventListener('beforeunload', function (e) {
-    if (!planDirty) return;
+    if (!planDirty && !hasUnsavedActualCutDrafts()) return;
     e.preventDefault();
     e.returnValue = '';
   });
@@ -218,8 +219,12 @@ function saveExtraPromptAndProceed() {
   });
 }
 
+function hasUnsavedActualCutDrafts() {
+  return Object.keys(actualCutDrafts).length > 0;
+}
+
 function confirmDiscardPlanIfDirty() {
-  if (!planDirty) return true;
+  if (!planDirty && !hasUnsavedActualCutDrafts()) return true;
   return confirm('You have unsaved cutting plan changes for this PO. Discard them?');
 }
 
@@ -329,6 +334,7 @@ function openOrder(poNumber) {
     modelPartNames = Object.keys((bundle.modelParts && bundle.modelParts.partsPerUnit) || {});
     versionHistory = bundle.versionHistory;
     leftoverByPart = bundle.leftoverByPart || {};
+    actualCutDrafts = {};
     refreshKnownExtraPartsDatalist();
     workingSheets = cloneSheets(activeVersion.sheets);
     planDirty = false;
@@ -462,6 +468,7 @@ function saveSheetQtyOverride(sheetIndex, rawValue) {
     value: rawValue
   }).then(function (result) {
     if (!result.ok) return showFatalError(result.error);
+    delete actualCutDrafts[sheetIndex];
     currentOrder = result.data;
     renderPlanTab();
   }).catch(showFatalError);
@@ -590,6 +597,12 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
   // done, stock/ledger are already computed from the locked-in number, so
   // it's shown read-only instead of editable to avoid implying a later edit
   // here would retroactively fix them.
+  //
+  // Typing here only stages a local draft (actualCutDrafts) - nothing is
+  // sent until its own small Save button is clicked. Deliberately NOT tied
+  // to "Save as New Plan Version": that button resets this PO's entire
+  // cutting/bending progress (a structural-recipe-change action), which a
+  // quantity tweak has nothing to do with.
   if (sheetPlan) {
     if (done) {
       var lockedSpan = document.createElement('span');
@@ -597,6 +610,9 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
       lockedSpan.textContent = (sheetPlan.overridden ? 'Actual cut: ' : 'Cut: ') + sheetPlan.physicalSheets;
       totalLine.appendChild(lockedSpan);
     } else {
+      var committedValue = sheetPlan.physicalSheets;
+      var draftValue = actualCutDrafts.hasOwnProperty(sheetIndex) ? actualCutDrafts[sheetIndex] : committedValue;
+
       var actualWrap = document.createElement('span');
       actualWrap.className = 'cs-actual-cut-wrap';
       var actualLabel = document.createElement('span');
@@ -608,11 +624,33 @@ function buildPlanSheetCard(sheet, sheetIndex, sheetPlan) {
       actualInput.className = 'cs-actual-cut-input';
       actualInput.disabled = !canEdit('cuttingStage');
       actualInput.title = 'Adjust the planned sheet count ahead of cutting - optional, and can still be confirmed or changed again when marking this sheet done';
-      actualInput.value = sheetPlan.physicalSheets;
-      actualInput.addEventListener('change', function (e) {
-        saveSheetQtyOverride(sheetIndex, e.target.value);
+      actualInput.value = draftValue;
+
+      var saveActualBtn = document.createElement('button');
+      saveActualBtn.type = 'button';
+      saveActualBtn.className = 'btn-secondary cs-actual-cut-save-btn';
+      saveActualBtn.textContent = 'Save';
+      saveActualBtn.disabled = !actualCutDrafts.hasOwnProperty(sheetIndex);
+
+      actualInput.addEventListener('input', function (e) {
+        // Only keep an entry while it genuinely differs from what's
+        // committed - keeps actualCutDrafts' key set an exact "which sheets
+        // have a real unsaved edit" set, reusable for the discard-changes
+        // warnings below without recomputing anything.
+        if (String(e.target.value) === String(committedValue)) {
+          delete actualCutDrafts[sheetIndex];
+        } else {
+          actualCutDrafts[sheetIndex] = e.target.value;
+        }
+        saveActualBtn.disabled = !actualCutDrafts.hasOwnProperty(sheetIndex);
       });
+
+      saveActualBtn.addEventListener('click', function () {
+        saveSheetQtyOverride(sheetIndex, actualInput.value);
+      });
+
       actualWrap.appendChild(actualInput);
+      actualWrap.appendChild(saveActualBtn);
       totalLine.appendChild(actualWrap);
     }
   }
@@ -903,6 +941,7 @@ function addSheet() {
 
 function removeSheet(sheetIndex) {
   workingSheets.splice(sheetIndex, 1);
+  actualCutDrafts = {}; // indices below sheetIndex just shifted - any staged draft is now pointing at the wrong sheet
   markDirty();
   renderPlanTab();
 }
@@ -967,6 +1006,7 @@ function saveNewVersion() {
     activeVersion = result.data.version;
     currentOrder = result.data.order;
     workingSheets = cloneSheets(activeVersion.sheets);
+    actualCutDrafts = {};
     planDirty = false;
     renderStatusPill();
     renderPlanTab();
@@ -1084,6 +1124,7 @@ function useVersionForOrder(versionId) {
     activeVersion = result.data.version;
     currentOrder = result.data.order;
     workingSheets = cloneSheets(activeVersion.sheets);
+    actualCutDrafts = {};
     planDirty = false;
     renderStatusPill();
     renderPlanTab();
