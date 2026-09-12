@@ -4,8 +4,13 @@ var currentBendingQueue = null;
 function initBendingStage() {
   el('back-to-dashboard-btn').addEventListener('click', showBendingDashboard);
   el('mark-all-complete-btn').addEventListener('click', markAllBendingComplete);
+  el('pull-inventory-btn').addEventListener('click', openPullInventoryModal);
+  el('pull-inventory-cancel-btn').addEventListener('click', function () {
+    el('pull-inventory-overlay').style.display = 'none';
+  });
   if (!canEdit('bendingStage')) {
     el('mark-all-complete-btn').style.display = 'none';
+    el('pull-inventory-btn').style.display = 'none';
   }
   showBendingDashboard();
 }
@@ -226,22 +231,8 @@ function buildBendingEntryCard(entry) {
   var useInventoryBox = buildUseInventoryCheckbox(entry);
   if (useInventoryBox) card.appendChild(useInventoryBox);
 
-  // Every plan entry - required part or plan-level "extra" output alike -
-  // can be manually banked to the Leftover Ledger for its full totalQty,
-  // for whenever a run produced more than this PO actually needed.
-  // Independent of bending completion; hidden once already added.
-  if (!entry.alreadyInInventory && entry.totalQty > 0) {
-    var addToInventoryBtn = document.createElement('button');
-    addToInventoryBtn.type = 'button';
-    addToInventoryBtn.className = 'btn-secondary';
-    addToInventoryBtn.style.marginTop = 'var(--space-3)';
-    addToInventoryBtn.textContent = 'Add to Extra Part Inventory';
-    addToInventoryBtn.disabled = !canEdit('bendingStage');
-    addToInventoryBtn.addEventListener('click', function () {
-      addPlanEntryToInventoryNow(entry.index, addToInventoryBtn);
-    });
-    card.appendChild(addToInventoryBtn);
-  }
+  var moveControl = buildMoveToInventoryControl(entry);
+  if (moveControl) card.appendChild(moveControl);
 
   checkbox.addEventListener('change', function (e) {
     var useFromInventory = !!(useInventoryBox && useInventoryBox._checkbox.checked);
@@ -251,15 +242,64 @@ function buildBendingEntryCard(entry) {
   return card;
 }
 
-function addPlanEntryToInventoryNow(entryIndex, btn) {
+// Every plan entry - required part or plan-level "extra" output alike - can
+// have some (or all) of its pending qty moved to the Leftover Ledger, for
+// whenever a run produced more than this PO actually needed. Only offered
+// while there's a sheet done to move FROM and the part isn't already bent -
+// once fully moved, the entry drops out of the list entirely (server-side).
+function buildMoveToInventoryControl(entry) {
+  if (entry.done || !entry.unlocked || !(entry.totalQty > 0)) return null;
+
+  var wrap = document.createElement('div');
+  wrap.className = 'field-row';
+  wrap.style.flexDirection = 'row';
+  wrap.style.marginTop = 'var(--space-3)';
+  wrap.style.marginBottom = '0';
+  wrap.style.alignItems = 'center';
+  wrap.style.flexWrap = 'wrap';
+  wrap.style.gap = '8px';
+
+  var qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.min = '1';
+  qtyInput.max = String(entry.totalQty);
+  qtyInput.placeholder = 'Qty';
+  qtyInput.style.maxWidth = '90px';
+  qtyInput.disabled = !canEdit('bendingStage');
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-secondary';
+  btn.textContent = 'Move to Extra Inventory';
+  btn.disabled = !canEdit('bendingStage');
+  btn.addEventListener('click', function () {
+    var qty = Number(qtyInput.value);
+    if (!(qty > 0)) {
+      showFatalError('Enter a quantity greater than zero.');
+      return;
+    }
+    if (qty > entry.totalQty) {
+      showFatalError('Only ' + entry.totalQty + ' pcs left to move.');
+      return;
+    }
+    moveEntryQtyToInventory(entry.index, qty, btn);
+  });
+
+  wrap.appendChild(qtyInput);
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+function moveEntryQtyToInventory(entryIndex, qty, btn) {
   if (!canEdit('bendingStage')) {
     showFatalError('View only - ask an admin for edit access to change this.');
     return;
   }
   btn.disabled = true;
-  apiPost('addPlanEntryToInventoryNow', {
+  apiPost('moveEntryQtyToInventory', {
     poNumber: currentBendingQueue.poNumber,
-    entryIndex: entryIndex
+    entryIndex: entryIndex,
+    qty: qty
   }).then(function (result) {
     if (!result.ok) {
       btn.disabled = false;
@@ -333,7 +373,9 @@ function buildExtraBendingEntryCard(entry) {
   checkbox.disabled = !canEdit('bendingStage');
 
   var text = document.createElement('span');
-  var sizeTag = entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '';
+  var sizeTag = entry.isFromInventory
+    ? ' [from Extra Inventory]'
+    : (entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '');
   text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + formatBendingQtyText(entry) + ' <span class="muted">— ' + entry.sheetLabel + '</span>';
 
   label.appendChild(checkbox);
@@ -412,6 +454,104 @@ function toggleExtraBendingEntry(extraKey, completed, useFromInventory) {
   }).catch(function (err) {
     showFatalError(err);
     renderExtraBendingEntries();
+  });
+}
+
+// Lets the bender pull surplus stock (already sitting in the Leftover
+// Ledger for this order's model, or the cross-model Universal bucket) into
+// this PO's bending list - useful when Cutting hasn't finished (or even
+// started) that part's own sheet yet, but stock already exists from a prior
+// order's surplus.
+function openPullInventoryModal() {
+  var list = el('pull-inventory-list');
+  var empty = el('pull-inventory-empty');
+  list.innerHTML = '';
+
+  var avail = (currentBendingQueue && currentBendingQueue.availableInventory) || [];
+  if (avail.length === 0) {
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    avail.forEach(function (row) {
+      list.appendChild(buildPullInventoryRow(row));
+    });
+  }
+  el('pull-inventory-overlay').style.display = 'flex';
+}
+
+function buildPullInventoryRow(row) {
+  var wrap = document.createElement('div');
+  wrap.className = 'field-row';
+  wrap.style.flexDirection = 'row';
+  wrap.style.alignItems = 'center';
+  wrap.style.flexWrap = 'wrap';
+  wrap.style.gap = '8px';
+  wrap.style.marginBottom = 'var(--space-3)';
+
+  var label = document.createElement('span');
+  label.style.flex = '1';
+  label.innerHTML = '<strong>' + row.partName + '</strong>' + (row.size ? ' (' + row.size + ')' : '') +
+    (row.modelName === 'Universal' ? ' <span class="muted">[Universal]</span>' : '') +
+    ' <span class="muted">— ' + row.qty + ' available</span>';
+
+  var qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.min = '1';
+  qtyInput.max = String(row.qty);
+  qtyInput.placeholder = 'Qty';
+  qtyInput.style.maxWidth = '80px';
+  qtyInput.disabled = !canEdit('bendingStage');
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-primary';
+  btn.textContent = 'Pull';
+  btn.disabled = !canEdit('bendingStage');
+  btn.addEventListener('click', function () {
+    var qty = Number(qtyInput.value);
+    if (!(qty > 0)) {
+      showFatalError('Enter a quantity greater than zero.');
+      return;
+    }
+    if (qty > row.qty) {
+      showFatalError('Only ' + row.qty + ' pcs available.');
+      return;
+    }
+    pullFromExtraInventory(row, qty, btn);
+  });
+
+  wrap.appendChild(label);
+  wrap.appendChild(qtyInput);
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+function pullFromExtraInventory(row, qty, btn) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to change this.');
+    return;
+  }
+  btn.disabled = true;
+  apiPost('pullFromExtraInventory', {
+    poNumber: currentBendingQueue.poNumber,
+    modelName: row.modelName,
+    partName: row.partName,
+    size: row.size,
+    qty: qty
+  }).then(function (result) {
+    if (!result.ok) {
+      btn.disabled = false;
+      showFatalError(result.error);
+      return;
+    }
+    currentBendingQueue = result.data;
+    el('pull-inventory-overlay').style.display = 'none';
+    renderBendingStatusPill();
+    renderBendingEntries();
+    renderExtraBendingEntries();
+  }).catch(function (err) {
+    btn.disabled = false;
+    showFatalError(err);
   });
 }
 

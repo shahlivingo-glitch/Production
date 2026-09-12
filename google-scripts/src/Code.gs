@@ -105,7 +105,8 @@ var ACTION_MENUS = {
   setBendingComplete: ['bendingStage', 'edit'],
   setExtraBendingComplete: ['bendingStage', 'edit'],
   addExtraToInventoryNow: ['bendingStage', 'edit'],
-  addPlanEntryToInventoryNow: ['bendingStage', 'edit'],
+  moveEntryQtyToInventory: ['bendingStage', 'edit'],
+  pullFromExtraInventory: ['bendingStage', 'edit'],
   markAllBendingComplete: ['bendingStage', 'edit'],
 
   // Extra Part Inventory (view-only page - no edit actions exist for it)
@@ -205,7 +206,8 @@ var POST_ACTIONS = {
   setBendingComplete: function (b) { return setBendingComplete(b); },
   setExtraBendingComplete: function (b) { return setExtraBendingComplete(b); },
   addExtraToInventoryNow: function (b) { return addExtraToInventoryNow(b); },
-  addPlanEntryToInventoryNow: function (b) { return addPlanEntryToInventoryNow(b); },
+  moveEntryQtyToInventory: function (b) { return moveEntryQtyToInventory(b); },
+  pullFromExtraInventory: function (b) { return pullFromExtraInventory(b); },
   markAllBendingComplete: function (b) { return markAllBendingComplete(b); },
   setMultiYieldDecision: function (b) { return setMultiYieldDecision(b); },
   receiveSheetStock: function (b) { return receiveSheetStock(b); },

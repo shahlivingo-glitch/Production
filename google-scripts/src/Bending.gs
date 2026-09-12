@@ -41,6 +41,33 @@ function getExtraBendingEntries(poNumber, order) {
   listCuttingExtras(poNumber).forEach(function (r) {
     var d = r.details || {};
     var addedMap = r.addedToInventory || {};
+    if (r.type === 'inventory-pull') {
+      // Created by pullFromExtraInventory - a part manually pulled OUT of
+      // the Leftover Ledger into this PO's bending queue (e.g. so bending
+      // can proceed before Cutting has even finished that part's real
+      // sheet). The ledger was already decremented at pull time, so this
+      // never offers "use from inventory" or "add to inventory" again -
+      // AddedToInventory is pre-set to {main:true} at creation for exactly
+      // that reason.
+      if (!d.partName || !(Number(d.qty) > 0)) return;
+      var key = r.extraId;
+      var done = !!completion[key];
+      entries.push({
+        extraKey: key,
+        partName: d.partName,
+        qty: Number(d.qty) || 0,
+        totalQty: Number(d.qty) || 0,
+        isExtra: false,
+        isFromInventory: true,
+        size: d.size || '',
+        sheetLabel: 'Pulled from Extra Inventory',
+        unlocked: true,
+        done: done,
+        leftoverAvailable: 0,
+        alreadyInInventory: true
+      });
+      return;
+    }
     if (r.type === 'extra-part') {
       if (!d.partName || !(Number(d.qty) > 0)) return;
       var key = r.extraId;
@@ -108,8 +135,14 @@ function getBendingQueueForOrder(poNumber) {
     sanitizeSheetQtyOverrides(parseJsonSafe(order.SheetQtyOverrides, {}), sheets.length)
   );
 
-  var planEntryAddedToInventory = parseJsonSafe(order.PlanEntryAddedToInventory, {});
+  var planEntryMoves = parseJsonSafe(order.PlanEntryInventoryMoves, {});
 
+  // Any plan entry (a required part or a plan-level "extra" output alike)
+  // can have some or all of its produced qty manually moved to the Leftover
+  // Ledger via moveEntryQtyToInventory - for whenever a run produced more
+  // than this PO actually needed. `totalQty` here is already NET of that
+  // (the real pending-for-bending count); an entry fully moved (nothing left
+  // to bend) is dropped from the list entirely, same as if it never existed.
   var entries = flattenPlanOutputs(sheets).map(function (entry, index) {
     // Non-extra parts only - mirrors applyCutStockAndLedger's own scoping
     // (extras never auto-post to/draw from the ledger). Live lookup each
@@ -119,26 +152,33 @@ function getBendingQueueForOrder(poNumber) {
       ? getExtraPartInventoryQty(order.ModelName, entry.partName, '')
       : 0;
     var physicalSheetsForThisSheet = (sheetPlan[entry.sheetIndex] && sheetPlan[entry.sheetIndex].physicalSheets) || 0;
+    var rawTotalQty = entry.qty * physicalSheetsForThisSheet;
+    var movedQty = Number(planEntryMoves[index]) || 0;
+    var pendingQty = Math.max(0, rawTotalQty - movedQty);
     return {
       index: index,
       sheetIndex: entry.sheetIndex,
       sheetLabel: sheetLabelForBending(sheets[entry.sheetIndex], entry.sheetIndex),
       partName: entry.partName,
       qty: entry.qty,
-      totalQty: entry.qty * physicalSheetsForThisSheet,
+      totalQty: pendingQty,
+      movedQty: movedQty,
       isExtra: entry.isExtra,
       size: entry.size,
       unlocked: !!sheetCompletion[entry.sheetIndex],
       done: !!bendingCompletion[index],
-      leftoverAvailable: leftoverAvailable,
-      // Every plan entry (required part or plan-level "extra" output alike)
-      // can be manually banked to the Leftover Ledger for its full totalQty -
-      // an explicit, one-time-per-entry operator choice for whenever a run
-      // produced more than this PO actually needed. Independent of `done`
-      // (bending completion) on purpose: the operator judges when there's
-      // real surplus, the app doesn't try to infer it.
-      alreadyInInventory: !!planEntryAddedToInventory[index]
+      leftoverAvailable: leftoverAvailable
     };
+  }).filter(function (entry) {
+    return !(entry.movedQty > 0 && entry.totalQty <= 0);
+  });
+
+  // Parts currently sitting as surplus stock this order could pull from -
+  // its own model plus the Universal bucket (see resolveExtraInventoryModel).
+  // Bundled here (rather than a separate round trip) so the "Pull from Extra
+  // Inventory" picker opens instantly.
+  var availableInventory = listExtraPartInventory().filter(function (r) {
+    return (r.modelName === order.ModelName || r.modelName === UNIVERSAL_MODEL_TAG) && r.qty > 0;
   });
 
   return {
@@ -150,6 +190,7 @@ function getBendingQueueForOrder(poNumber) {
     cuttingStatus: order.CuttingStatus || 'pending',
     entries: entries,
     extraEntries: getExtraBendingEntries(poNumber, order),
+    availableInventory: availableInventory,
     bendingStatus: order.BendingStatus || 'pending'
   };
 }
@@ -233,13 +274,15 @@ function resolveExtraBendingTask(poNumber, extraKey, orderModelName) {
   return null;
 }
 
-// The plan-entry counterpart to CuttingExtras.addExtraToInventoryNow: banks
-// one plan entry's full totalQty (whether a required part like BACK/SHELF or
-// a plan-level "extra" output like a rip/scrap piece defined on the sheet
-// itself) to the Leftover Ledger, on demand. Guarded by
-// Orders.PlanEntryAddedToInventory (keyed by entry index) so the same entry
-// can never be posted twice.
-function addPlanEntryToInventoryNow(payload) {
+// Moves some or all of a plan entry's pending (not-yet-bent) qty to the
+// Leftover Ledger - whether a required part like BACK/SHELF or a plan-level
+// "extra" output like a rip/scrap piece defined on the sheet itself.
+// Requires the part's sheet to already be cut (unlocked) and the entry to
+// not already be fully bent - moving surplus only makes sense for flat,
+// not-yet-bent stock. Orders.PlanEntryInventoryMoves (keyed by entry index)
+// tracks the running total moved so far; getBendingQueueForOrder nets this
+// off the entry's totalQty and drops the entry entirely once nothing's left.
+function moveEntryQtyToInventory(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
     throw new Error('PO not found: ' + payload.poNumber);
@@ -248,10 +291,9 @@ function addPlanEntryToInventoryNow(payload) {
   if (idx < 0 || isNaN(idx)) {
     throw new Error('Invalid entry index');
   }
-
-  var addedMap = parseJsonSafe(row.PlanEntryAddedToInventory, {});
-  if (addedMap[idx]) {
-    throw new Error('Already added to Extra Part Inventory.');
+  var qtyToMove = Number(payload.qty);
+  if (!(qtyToMove > 0)) {
+    throw new Error('Enter a quantity greater than zero.');
   }
 
   var sheets = getOrderActiveSheets(row);
@@ -261,6 +303,15 @@ function addPlanEntryToInventoryNow(payload) {
     throw new Error('Bending entry not found');
   }
 
+  var sheetCompletion = parseJsonSafe(row.SheetCompletion, []);
+  if (!sheetCompletion[entry.sheetIndex]) {
+    throw new Error('That part\'s sheet has not been marked complete in Cutting yet');
+  }
+  var bendingCompletion = parseJsonSafe(row.BendingCompletion, []);
+  if (bendingCompletion[idx]) {
+    throw new Error('This part is already marked bent.');
+  }
+
   var sheetPlan = computeOrderSheetPlan(
     sheets,
     getOrderSheetMultiplier(row),
@@ -268,14 +319,60 @@ function addPlanEntryToInventoryNow(payload) {
     sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), sheets.length)
   );
   var physicalSheetsForThisSheet = (sheetPlan[entry.sheetIndex] && sheetPlan[entry.sheetIndex].physicalSheets) || 0;
-  var totalQty = entry.qty * physicalSheetsForThisSheet;
-  if (!(totalQty > 0)) {
-    throw new Error('Nothing to add for this part.');
+  var rawTotalQty = entry.qty * physicalSheetsForThisSheet;
+
+  var moves = parseJsonSafe(row.PlanEntryInventoryMoves, {});
+  var alreadyMoved = Number(moves[idx]) || 0;
+  var remaining = rawTotalQty - alreadyMoved;
+  if (qtyToMove > remaining) {
+    throw new Error('Only ' + remaining + ' pcs left to move.');
   }
 
-  addToExtraPartInventory(row.ModelName, entry.partName, entry.size || '', totalQty);
-  addedMap[idx] = true;
-  writeRowUpdates('Orders', row._rowIndex, { PlanEntryAddedToInventory: JSON.stringify(addedMap) });
+  addToExtraPartInventory(row.ModelName, entry.partName, entry.size || '', qtyToMove);
+  moves[idx] = alreadyMoved + qtyToMove;
+  writeRowUpdates('Orders', row._rowIndex, { PlanEntryInventoryMoves: JSON.stringify(moves) });
+  return getBendingQueueForOrder(payload.poNumber);
+}
+
+// The reverse direction: pulls a qty of some part OUT of the Leftover
+// Ledger and injects it as a new Bending task for this PO - lets the bender
+// proceed on stock that's already sitting as surplus even if Cutting hasn't
+// finished (or even started) that part's real sheet for this order.
+// Reuses the CuttingExtras/getExtraBendingEntries machinery with a distinct
+// 'inventory-pull' type rather than a fourth parallel tracking table -
+// AddedToInventory is pre-marked {main:true} since it came FROM the ledger,
+// so it's never offered back into it a second time.
+function pullFromExtraInventory(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var modelName = String(payload.modelName || '');
+  var partName = String(payload.partName || '');
+  var size = payload.size || '';
+  var qty = Number(payload.qty);
+  if (!modelName || !partName) {
+    throw new Error('Choose a part.');
+  }
+  if (!(qty > 0)) {
+    throw new Error('Enter a quantity greater than zero.');
+  }
+
+  var available = getExtraPartInventoryQty(modelName, partName, size);
+  if (qty > available) {
+    throw new Error('Only ' + available + ' pcs available in Extra Part Inventory.');
+  }
+  consumeExtraPartInventory(modelName, partName, size, qty);
+
+  appendRow('CuttingExtras', {
+    ExtraId: generateId('EX'),
+    PoNumber: payload.poNumber,
+    Type: 'inventory-pull',
+    Details: JSON.stringify({ partName: partName, qty: qty, size: size, sourceModel: modelName }),
+    Timestamp: nowIso(),
+    AddedToInventory: JSON.stringify({ main: true })
+  });
+
   return getBendingQueueForOrder(payload.poNumber);
 }
 
