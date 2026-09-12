@@ -226,12 +226,53 @@ function buildBendingEntryCard(entry) {
   var useInventoryBox = buildUseInventoryCheckbox(entry);
   if (useInventoryBox) card.appendChild(useInventoryBox);
 
+  // Every plan entry - required part or plan-level "extra" output alike -
+  // can be manually banked to the Leftover Ledger for its full totalQty,
+  // for whenever a run produced more than this PO actually needed.
+  // Independent of bending completion; hidden once already added.
+  if (!entry.alreadyInInventory && entry.totalQty > 0) {
+    var addToInventoryBtn = document.createElement('button');
+    addToInventoryBtn.type = 'button';
+    addToInventoryBtn.className = 'btn-secondary';
+    addToInventoryBtn.style.marginTop = 'var(--space-3)';
+    addToInventoryBtn.textContent = 'Add to Extra Part Inventory';
+    addToInventoryBtn.disabled = !canEdit('bendingStage');
+    addToInventoryBtn.addEventListener('click', function () {
+      addPlanEntryToInventoryNow(entry.index, addToInventoryBtn);
+    });
+    card.appendChild(addToInventoryBtn);
+  }
+
   checkbox.addEventListener('change', function (e) {
     var useFromInventory = !!(useInventoryBox && useInventoryBox._checkbox.checked);
     toggleBendingEntry(entry.index, e.target.checked, useFromInventory);
   });
 
   return card;
+}
+
+function addPlanEntryToInventoryNow(entryIndex, btn) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to change this.');
+    return;
+  }
+  btn.disabled = true;
+  apiPost('addPlanEntryToInventoryNow', {
+    poNumber: currentBendingQueue.poNumber,
+    entryIndex: entryIndex
+  }).then(function (result) {
+    if (!result.ok) {
+      btn.disabled = false;
+      showFatalError(result.error);
+      return;
+    }
+    currentBendingQueue = result.data;
+    renderBendingStatusPill();
+    renderBendingEntries();
+  }).catch(function (err) {
+    btn.disabled = false;
+    showFatalError(err);
+  });
 }
 
 function toggleBendingEntry(entryIndex, completed, useFromInventory) {

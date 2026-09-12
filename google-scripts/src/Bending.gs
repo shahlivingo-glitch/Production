@@ -108,6 +108,8 @@ function getBendingQueueForOrder(poNumber) {
     sanitizeSheetQtyOverrides(parseJsonSafe(order.SheetQtyOverrides, {}), sheets.length)
   );
 
+  var planEntryAddedToInventory = parseJsonSafe(order.PlanEntryAddedToInventory, {});
+
   var entries = flattenPlanOutputs(sheets).map(function (entry, index) {
     // Non-extra parts only - mirrors applyCutStockAndLedger's own scoping
     // (extras never auto-post to/draw from the ledger). Live lookup each
@@ -128,7 +130,14 @@ function getBendingQueueForOrder(poNumber) {
       size: entry.size,
       unlocked: !!sheetCompletion[entry.sheetIndex],
       done: !!bendingCompletion[index],
-      leftoverAvailable: leftoverAvailable
+      leftoverAvailable: leftoverAvailable,
+      // Every plan entry (required part or plan-level "extra" output alike)
+      // can be manually banked to the Leftover Ledger for its full totalQty -
+      // an explicit, one-time-per-entry operator choice for whenever a run
+      // produced more than this PO actually needed. Independent of `done`
+      // (bending completion) on purpose: the operator judges when there's
+      // real surplus, the app doesn't try to infer it.
+      alreadyInInventory: !!planEntryAddedToInventory[index]
     };
   });
 
@@ -222,6 +231,52 @@ function resolveExtraBendingTask(poNumber, extraKey, orderModelName) {
     return { partName: partNameFromKey, qty: Number(produced[partNameFromKey]) || 0, size: '', inventoryModel: orderModelName };
   }
   return null;
+}
+
+// The plan-entry counterpart to CuttingExtras.addExtraToInventoryNow: banks
+// one plan entry's full totalQty (whether a required part like BACK/SHELF or
+// a plan-level "extra" output like a rip/scrap piece defined on the sheet
+// itself) to the Leftover Ledger, on demand. Guarded by
+// Orders.PlanEntryAddedToInventory (keyed by entry index) so the same entry
+// can never be posted twice.
+function addPlanEntryToInventoryNow(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var idx = Number(payload.entryIndex);
+  if (idx < 0 || isNaN(idx)) {
+    throw new Error('Invalid entry index');
+  }
+
+  var addedMap = parseJsonSafe(row.PlanEntryAddedToInventory, {});
+  if (addedMap[idx]) {
+    throw new Error('Already added to Extra Part Inventory.');
+  }
+
+  var sheets = getOrderActiveSheets(row);
+  var flat = flattenPlanOutputs(sheets);
+  var entry = flat[idx];
+  if (!entry) {
+    throw new Error('Bending entry not found');
+  }
+
+  var sheetPlan = computeOrderSheetPlan(
+    sheets,
+    getOrderSheetMultiplier(row),
+    parseJsonSafe(row.MultiYieldDecisions, {}),
+    sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), sheets.length)
+  );
+  var physicalSheetsForThisSheet = (sheetPlan[entry.sheetIndex] && sheetPlan[entry.sheetIndex].physicalSheets) || 0;
+  var totalQty = entry.qty * physicalSheetsForThisSheet;
+  if (!(totalQty > 0)) {
+    throw new Error('Nothing to add for this part.');
+  }
+
+  addToExtraPartInventory(row.ModelName, entry.partName, entry.size || '', totalQty);
+  addedMap[idx] = true;
+  writeRowUpdates('Orders', row._rowIndex, { PlanEntryAddedToInventory: JSON.stringify(addedMap) });
+  return getBendingQueueForOrder(payload.poNumber);
 }
 
 function setExtraBendingComplete(payload) {
