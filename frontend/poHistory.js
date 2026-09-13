@@ -229,7 +229,7 @@ function renderInventory() {
         m.partName,
         m.size || '<span class="muted">—</span>',
         String(Math.abs(m.delta)),
-        m.reason || '<span class="muted">—</span>',
+        m.reasonLabel || m.reason || '<span class="muted">—</span>',
         fmtTime(m.timestamp),
         fmtActor(m.actor)
       ];

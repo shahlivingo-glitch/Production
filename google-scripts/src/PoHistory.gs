@@ -20,6 +20,7 @@ function listExtraInventoryLog(poNumber) {
         size: r.Size || '',
         delta: Number(r.Delta) || 0,
         reason: r.Reason || '',
+        reasonLabel: reasonLabel(r.Reason),
         poNumber: String(r.PoNumber || ''),
         actor: r.Actor || '',
         timestamp: r.Timestamp,
