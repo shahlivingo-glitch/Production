@@ -1,10 +1,17 @@
 var TAB_HEADERS = {
   Models: ['ModelName', 'PartsPerUnit', 'UpdatedAt'],
   CuttingPlans: ['ModelName', 'PlanName', 'Sheets', 'UpdatedAt', 'PlanType', 'BaseQty'],
-  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'BendingCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'BendingStatus', 'CreatedAt', 'MultiYieldDecisions', 'SheetStockConsumed', 'PlanType', 'BulkBaseQty', 'BulkMultiplier', 'SheetQtyOverrides', 'BendingLeftoverConsumed', 'ExtraBendingCompletion', 'PlanEntryInventoryMoves'],
+  Orders: ['PoNumber', 'ModelName', 'PlanName', 'Qty', 'DxfRefNo', 'ColourPlan', 'DeliveryDeadline', 'PartyName', 'PlanVersionId', 'SheetCompletion', 'BendingCompletion', 'TotalSheetsRequired', 'CuttingStatus', 'BendingStatus', 'CreatedAt', 'MultiYieldDecisions', 'SheetStockConsumed', 'PlanType', 'BulkBaseQty', 'BulkMultiplier', 'SheetQtyOverrides', 'BendingLeftoverConsumed', 'ExtraBendingCompletion', 'PlanEntryInventoryMoves', 'SheetCompletionMeta', 'BendingCompletionMeta', 'ExtraBendingCompletionMeta'],
   PlanVersions: ['VersionId', 'ModelName', 'VersionNumber', 'SourcePlanName', 'Sheets', 'CreatedAt', 'Note'],
   CuttingExtras: ['ExtraId', 'PoNumber', 'Type', 'Details', 'Timestamp', 'AddedToInventory'],
   ExtraPartInventory: ['ModelName', 'PartName', 'Size', 'Qty', 'UpdatedAt'],
+  // Per-movement audit trail for ExtraPartInventory (the Leftover Ledger),
+  // mirroring SheetStockLog's role for raw sheets. ExtraPartInventory itself
+  // only holds a running balance per part, so without this there's no way to
+  // answer "what moved in/out for this PO, when, and who did it" - which is
+  // exactly what the PO History report needs. Delta > 0 is stock added,
+  // delta < 0 is stock consumed.
+  ExtraInventoryLog: ['LogId', 'ModelName', 'PartName', 'Size', 'Delta', 'Reason', 'PoNumber', 'Actor', 'Timestamp', 'Note'],
   SheetStock: ['Size', 'Width', 'Height', 'Thickness', 'Qty', 'UpdatedAt'],
   SheetStockLog: ['LogId', 'Size', 'Delta', 'Reason', 'PoNumber', 'Timestamp', 'Note'],
   // Named AppUsers/AppSessions, not Users/Sessions - a tab literally named

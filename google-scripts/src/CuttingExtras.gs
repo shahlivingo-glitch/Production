@@ -1,6 +1,30 @@
 var UNIVERSAL_MODEL_TAG = 'Universal';
 
-function addToExtraPartInventory(modelName, partName, size, qty) {
+// Appends one row to the Leftover Ledger's audit trail. ctx carries the
+// "why/who/which PO" that ExtraPartInventory's running balance can't hold -
+// see ExtraInventoryLog in SheetService.gs. Best-effort: an audit-write
+// failure must never block the stock movement it describes.
+function logExtraInventoryMovement(modelName, partName, size, delta, ctx) {
+  ctx = ctx || {};
+  try {
+    appendRow('ExtraInventoryLog', {
+      LogId: generateId('EIL'),
+      ModelName: modelName,
+      PartName: partName,
+      Size: size || '',
+      Delta: delta,
+      Reason: ctx.reason || '',
+      PoNumber: ctx.poNumber || '',
+      Actor: ctx.actor || '',
+      Timestamp: nowIso(),
+      Note: ctx.note || ''
+    });
+  } catch (err) {
+    // swallow - the movement itself already happened
+  }
+}
+
+function addToExtraPartInventory(modelName, partName, size, qty, ctx) {
   if (!partName || !qty) {
     return;
   }
@@ -24,6 +48,7 @@ function addToExtraPartInventory(modelName, partName, size, qty) {
       UpdatedAt: nowIso()
     });
   }
+  logExtraInventoryMovement(modelName, partName, size, qty, ctx);
 }
 
 function getExtraPartInventoryQty(modelName, partName, size) {
@@ -63,7 +88,7 @@ function getLeftoverByPartForSheets(modelName, sheets) {
 // an entry done and that part already has surplus sitting in the ledger, so
 // it isn't offered again for a later order. Returns how much was actually
 // consumed (<= qty, may be 0).
-function consumeExtraPartInventory(modelName, partName, size, qty) {
+function consumeExtraPartInventory(modelName, partName, size, qty, ctx) {
   if (!partName || !(qty > 0)) return 0;
   var matchFn = function (r) {
     return String(r.ModelName) === String(modelName) &&
@@ -75,6 +100,7 @@ function consumeExtraPartInventory(modelName, partName, size, qty) {
   if (available <= 0) return 0;
   var consumed = Math.min(available, qty);
   updateRow('ExtraPartInventory', matchFn, { Qty: available - consumed, UpdatedAt: nowIso() });
+  logExtraInventoryMovement(modelName, partName, size, -consumed, ctx);
   return consumed;
 }
 
@@ -111,12 +137,13 @@ function addCuttingExtra(payload) {
   var details = payload.details || {};
   var addToInventory = !!payload.addToInventory;
   var addedMap = {};
+  var ctx = { poNumber: payload.poNumber, actor: resolveActorName(payload.token), reason: 'logged-extra', note: 'Logged at cutting' };
 
   if (payload.type === 'extra-sheet') {
     if (addToInventory) {
       var partsProduced = details.partsProduced || {};
       Object.keys(partsProduced).forEach(function (partName) {
-        addToExtraPartInventory(order.ModelName, partName, '', Number(partsProduced[partName]) || 0);
+        addToExtraPartInventory(order.ModelName, partName, '', Number(partsProduced[partName]) || 0, ctx);
         addedMap[partName] = true;
       });
     }
@@ -132,7 +159,7 @@ function addCuttingExtra(payload) {
     }
   } else if (addToInventory) {
     var inventoryModel = resolveExtraInventoryModel(order.ModelName, details);
-    addToExtraPartInventory(inventoryModel, details.partName, details.size || '', Number(details.qty) || 0);
+    addToExtraPartInventory(inventoryModel, details.partName, details.size || '', Number(details.qty) || 0, ctx);
     addedMap.main = true;
   }
 
@@ -198,7 +225,12 @@ function addExtraToInventoryNow(payload) {
     throw new Error('Nothing to add for ' + extraKey);
   }
 
-  addToExtraPartInventory(inventoryModel, partName, size, qty);
+  addToExtraPartInventory(inventoryModel, partName, size, qty, {
+    poNumber: poNumber,
+    actor: resolveActorName(payload.token),
+    reason: 'added-from-bending',
+    note: 'Added to inventory from Bending Stage'
+  });
   addedMap[mapKey] = true;
   writeRowUpdates('CuttingExtras', extraRow._rowIndex, { AddedToInventory: JSON.stringify(addedMap) });
   return { extraKey: extraKey, added: true };

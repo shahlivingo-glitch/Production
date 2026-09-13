@@ -20,6 +20,20 @@ function generateId(prefix) {
   return prefix + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
 }
 
+// Who is performing the current action, for audit fields (mark-done
+// metadata, Leftover Ledger movements). Every payload already carries the
+// session token for checkAccess, so this is just a second lookup off the
+// same token - served from the per-execution row cache, so it costs nothing
+// extra. Never throws: an unattributable action is still a valid action.
+function resolveActorName(token) {
+  try {
+    var userRow = getSessionUser(token);
+    return userRow ? String(userRow.Username) : '';
+  } catch (err) {
+    return '';
+  }
+}
+
 function padNumber(n, width) {
   var s = String(n);
   while (s.length < width) s = '0' + s;

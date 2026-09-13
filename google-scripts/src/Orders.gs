@@ -184,7 +184,7 @@ function createOrder(payload) {
 // SheetStockConsumed guards re-checks. Not reversed on uncheck (matches the
 // existing mark-done extras prompt). Best-effort: a stock/ledger failure must
 // never block the checkbox.
-function applyCutStockAndLedger(row, sheetIndex, sheets, consumed, overrides) {
+function applyCutStockAndLedger(row, sheetIndex, sheets, consumed, overrides, actor) {
   if (consumed[String(sheetIndex)]) {
     return consumed;
   }
@@ -202,7 +202,12 @@ function applyCutStockAndLedger(row, sheetIndex, sheets, consumed, overrides) {
       }
       sheetPlan.rows.forEach(function (r) {
         if (r.surplus > 0 && r.partName && !r.isExtra) {
-          addToExtraPartInventory(row.ModelName, r.partName, '', r.surplus);
+          addToExtraPartInventory(row.ModelName, r.partName, '', r.surplus, {
+            poNumber: row.PoNumber,
+            actor: actor || '',
+            reason: 'cut-surplus',
+            note: 'Surplus from Sheet ' + (sheetIndex + 1) + ' cut'
+          });
         }
       });
     }
@@ -266,8 +271,22 @@ function setSheetComplete(payload) {
   var totalSheets = sheets.length;
   var completion = parseJsonSafe(row.SheetCompletion, []);
   completion[idx] = !!payload.completed;
+
+  // When and by whom - SheetCompletion itself is only a boolean array, so
+  // without this the PO History report can't say anything about when a sheet
+  // was actually cut. Cleared again on un-complete so it never describes a
+  // completion that has since been undone.
+  var actor = resolveActorName(payload.token);
+  var completionMeta = parseJsonSafe(row.SheetCompletionMeta, {});
+  if (payload.completed) {
+    completionMeta[String(idx)] = { at: nowIso(), by: actor };
+  } else {
+    delete completionMeta[String(idx)];
+  }
+
   var updates = {
-    SheetCompletion: JSON.stringify(completion)
+    SheetCompletion: JSON.stringify(completion),
+    SheetCompletionMeta: JSON.stringify(completionMeta)
   };
   // Checking off an individual sheet never flips the PO to "complete" on
   // its own, even if this happens to be the last one still pending -
@@ -291,7 +310,7 @@ function setSheetComplete(payload) {
       }
     }
     var consumed = parseJsonSafe(row.SheetStockConsumed, {});
-    applyCutStockAndLedger(row, idx, sheets, consumed, overrides);
+    applyCutStockAndLedger(row, idx, sheets, consumed, overrides, actor);
     updates.SheetStockConsumed = JSON.stringify(consumed);
     var decisions = parseJsonSafe(row.MultiYieldDecisions, {});
     var total = 0;
@@ -396,12 +415,22 @@ function markAllSheetsComplete(payload) {
   var filled = [];
   var consumed = parseJsonSafe(row.SheetStockConsumed, {});
   var overrides = sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), totalSheets);
+  var actor = resolveActorName(payload.token);
+  var wasComplete = parseJsonSafe(row.SheetCompletion, []);
+  var completionMeta = parseJsonSafe(row.SheetCompletionMeta, {});
+  var stamp = nowIso();
   for (var i = 0; i < totalSheets; i++) {
     filled.push(true);
-    applyCutStockAndLedger(row, i, sheets, consumed, overrides);
+    // Only stamp sheets this call is actually completing - one already marked
+    // done keeps its original timestamp/actor.
+    if (!wasComplete[i]) {
+      completionMeta[String(i)] = { at: stamp, by: actor, viaMarkAll: true };
+    }
+    applyCutStockAndLedger(row, i, sheets, consumed, overrides, actor);
   }
   writeRowUpdates('Orders', row._rowIndex, {
     SheetCompletion: JSON.stringify(filled),
+    SheetCompletionMeta: JSON.stringify(completionMeta),
     CuttingStatus: computeCuttingStatus(filled, totalSheets),
     SheetStockConsumed: JSON.stringify(consumed)
   });

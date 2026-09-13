@@ -204,10 +204,15 @@ function getBendingQueueForOrder(poNumber) {
 // BendingLeftoverConsumed too so a re-check never double-consumes. Extras
 // (plan-level ones) are skipped - they never auto-post to/draw from the
 // ledger either way.
-function consumeBendingLeftoverIfRequested(row, entry, idx, wasDone, useFromInventory, consumedMap) {
+function consumeBendingLeftoverIfRequested(row, entry, idx, wasDone, useFromInventory, consumedMap, actor) {
   if (wasDone || !useFromInventory || consumedMap[String(idx)] || entry.isExtra || !entry.partName) return;
   try {
-    consumeExtraPartInventory(row.ModelName, entry.partName, '', Number(entry.qty) || 0);
+    consumeExtraPartInventory(row.ModelName, entry.partName, '', Number(entry.qty) || 0, {
+      poNumber: row.PoNumber,
+      actor: actor || '',
+      reason: 'bending-used-inventory',
+      note: 'Used from inventory instead of bending fresh'
+    });
   } catch (err) {
     // swallow - completion must still record
   }
@@ -239,13 +244,27 @@ function setBendingComplete(payload) {
   var completion = parseJsonSafe(row.BendingCompletion, []);
   var wasDone = !!completion[idx];
   completion[idx] = !!payload.completed;
+  var actor = resolveActorName(payload.token);
+
+  // When/by whom/from where - BendingCompletion is only a boolean array, so
+  // the PO History report has nothing to show about a part's bending without
+  // this. fromInventory records whether this part was covered by existing
+  // leftover stock rather than freshly-cut pieces.
+  var completionMeta = parseJsonSafe(row.BendingCompletionMeta, {});
+  if (payload.completed) {
+    completionMeta[String(idx)] = { at: nowIso(), by: actor, fromInventory: !!payload.useFromInventory };
+  } else {
+    delete completionMeta[String(idx)];
+  }
+
   var updates = {
     BendingCompletion: JSON.stringify(completion),
+    BendingCompletionMeta: JSON.stringify(completionMeta),
     BendingStatus: computeBendingStatus(completion, flat.length)
   };
   if (payload.completed) {
     var consumedMap = parseJsonSafe(row.BendingLeftoverConsumed, {});
-    consumeBendingLeftoverIfRequested(row, entry, idx, wasDone, !!payload.useFromInventory, consumedMap);
+    consumeBendingLeftoverIfRequested(row, entry, idx, wasDone, !!payload.useFromInventory, consumedMap, actor);
     updates.BendingLeftoverConsumed = JSON.stringify(consumedMap);
   }
   writeRowUpdates('Orders', row._rowIndex, updates);
@@ -328,7 +347,12 @@ function moveEntryQtyToInventory(payload) {
     throw new Error('Only ' + remaining + ' pcs left to move.');
   }
 
-  addToExtraPartInventory(row.ModelName, entry.partName, entry.size || '', qtyToMove);
+  addToExtraPartInventory(row.ModelName, entry.partName, entry.size || '', qtyToMove, {
+    poNumber: row.PoNumber,
+    actor: resolveActorName(payload.token),
+    reason: 'moved-from-bending',
+    note: 'Surplus moved out of bending queue'
+  });
   moves[idx] = alreadyMoved + qtyToMove;
   writeRowUpdates('Orders', row._rowIndex, { PlanEntryInventoryMoves: JSON.stringify(moves) });
   return getBendingQueueForOrder(payload.poNumber);
@@ -362,7 +386,12 @@ function pullFromExtraInventory(payload) {
   if (qty > available) {
     throw new Error('Only ' + available + ' pcs available in Extra Part Inventory.');
   }
-  consumeExtraPartInventory(modelName, partName, size, qty);
+  consumeExtraPartInventory(modelName, partName, size, qty, {
+    poNumber: payload.poNumber,
+    actor: resolveActorName(payload.token),
+    reason: 'pulled-into-bending',
+    note: 'Pulled into this PO\'s bending queue'
+  });
 
   appendRow('CuttingExtras', {
     ExtraId: generateId('EX'),
@@ -387,7 +416,19 @@ function setExtraBendingComplete(payload) {
   }
   var completion = parseJsonSafe(row.ExtraBendingCompletion, {});
   completion[key] = !!payload.completed;
-  var updates = { ExtraBendingCompletion: JSON.stringify(completion) };
+  var actor = resolveActorName(payload.token);
+
+  var completionMeta = parseJsonSafe(row.ExtraBendingCompletionMeta, {});
+  if (payload.completed) {
+    completionMeta[key] = { at: nowIso(), by: actor, fromInventory: !!payload.useFromInventory };
+  } else {
+    delete completionMeta[key];
+  }
+
+  var updates = {
+    ExtraBendingCompletion: JSON.stringify(completion),
+    ExtraBendingCompletionMeta: JSON.stringify(completionMeta)
+  };
 
   // Shares BendingLeftoverConsumed with the plan-entry path (setBendingComplete)
   // rather than deriving "already consumed" from ExtraBendingCompletion itself -
@@ -402,7 +443,12 @@ function setExtraBendingComplete(payload) {
       var task = resolveExtraBendingTask(payload.poNumber, key, row.ModelName);
       if (task && task.partName && task.qty > 0) {
         try {
-          consumeExtraPartInventory(task.inventoryModel, task.partName, task.size || '', task.qty);
+          consumeExtraPartInventory(task.inventoryModel, task.partName, task.size || '', task.qty, {
+            poNumber: payload.poNumber,
+            actor: actor,
+            reason: 'bending-used-inventory',
+            note: 'Used from inventory for extra part'
+          });
         } catch (err) {
           // best-effort - completion must still record
         }
@@ -426,24 +472,38 @@ function markAllBendingComplete(payload) {
   var sheetCompletion = parseJsonSafe(row.SheetCompletion, []);
   var completion = parseJsonSafe(row.BendingCompletion, []);
 
+  var actor = resolveActorName(payload.token);
+  var stamp = nowIso();
+  var completionMeta = parseJsonSafe(row.BendingCompletionMeta, {});
+  var extraCompletionMeta = parseJsonSafe(row.ExtraBendingCompletionMeta, {});
+
   // Bulk-complete never touches the Leftover Ledger - "use inventory" is an
   // explicit, per-entry choice (see setBendingComplete/setExtraBendingComplete)
-  // with no natural per-entry UI in a single bulk action.
+  // with no natural per-entry UI in a single bulk action. Only entries this
+  // call actually completes get stamped; already-done ones keep their original.
   flat.forEach(function (entry, idx) {
     if (sheetCompletion[entry.sheetIndex]) {
+      if (!completion[idx]) {
+        completionMeta[String(idx)] = { at: stamp, by: actor, fromInventory: false, viaMarkAll: true };
+      }
       completion[idx] = true;
     }
   });
 
   var extraCompletion = parseJsonSafe(row.ExtraBendingCompletion, {});
   getExtraBendingEntries(payload.poNumber, row).forEach(function (e) {
+    if (!extraCompletion[e.extraKey]) {
+      extraCompletionMeta[e.extraKey] = { at: stamp, by: actor, fromInventory: false, viaMarkAll: true };
+    }
     extraCompletion[e.extraKey] = true;
   });
 
   writeRowUpdates('Orders', row._rowIndex, {
     BendingCompletion: JSON.stringify(completion),
+    BendingCompletionMeta: JSON.stringify(completionMeta),
     BendingStatus: computeBendingStatus(completion, flat.length),
-    ExtraBendingCompletion: JSON.stringify(extraCompletion)
+    ExtraBendingCompletion: JSON.stringify(extraCompletion),
+    ExtraBendingCompletionMeta: JSON.stringify(extraCompletionMeta)
   });
   return getBendingQueueForOrder(payload.poNumber);
 }

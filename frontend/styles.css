@@ -398,6 +398,23 @@ a { color: var(--color-accent); }
   box-shadow: var(--shadow-sm);
 }
 
+/* A dash-row that drills through to a detail page (Recent Activity -> PO
+   History). Hover lift matches the PO cards on the stage dashboards. */
+.dash-row-link {
+  cursor: pointer;
+  transition: box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+
+.dash-row-link:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Plan-vs-actual deltas in the PO History report: surplus reads positive,
+   short reads as a warning. */
+.variance-surplus { color: var(--color-success-text, #1a7f4b); font-weight: 600; }
+.variance-short { color: var(--color-destructive); font-weight: 600; }
+
 /* ============================================================
    Status pills
    ============================================================ */

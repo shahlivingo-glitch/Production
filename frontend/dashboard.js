@@ -71,10 +71,14 @@ function renderDashboard(d) {
   } else {
     d.recentActivity.forEach(function (a) {
       var row = document.createElement('div');
-      row.className = 'dash-row';
+      row.className = 'dash-row dash-row-link';
       var label = a.type === 'order' ? 'PO created' : a.detail;
       row.innerHTML = '<span><strong>' + a.poNumber + '</strong> — ' + label + (a.type === 'order' ? ': ' + a.detail : '') + '</span>' +
         '<span class="muted">' + new Date(a.timestamp).toLocaleString() + '</span>';
+      row.title = 'Open full history for ' + a.poNumber;
+      row.addEventListener('click', function () {
+        window.location.href = 'poHistory.html?po=' + encodeURIComponent(a.poNumber);
+      });
       activityList.appendChild(row);
     });
   }

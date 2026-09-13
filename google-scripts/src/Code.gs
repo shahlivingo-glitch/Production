@@ -127,6 +127,9 @@ var ACTION_MENUS = {
   // Configuration or Raw Sheet Stock access to use); the user-management
   // actions enforce admin-only themselves (Auth.gs's requireAdmin), and
   // dashboardSummary is meant for every signed-in user regardless of menus.
+  // poFullHistory is absent for the same reason: it's the read-only
+  // drill-down behind a Dashboard activity row, so anyone who can see that
+  // row can see the PO behind it.
 };
 
 function checkAccess(token, action) {
@@ -173,6 +176,7 @@ var GET_ACTIONS = {
   sheetStock: function (p) { return listSheetStock(); },
   sheetStockLog: function (p) { return listSheetStockLog(p.limit); },
   sheetStockBundle: function (p) { return getSheetStockBundle(p.limit); },
+  poFullHistory: function (p) { return getPoFullHistory(p.poNumber); },
   listUsers: function (p) { return listUsers(p); },
   runSetup: function (p) {
     setupSpreadsheet();

@@ -1337,7 +1337,7 @@ function renderExtraSheetForm() {
   var wrap = el('extra-sheet-form');
   wrap.innerHTML = '';
 
-  var state = { width: '', height: '', thickness: '', outputs: [{ partName: '', qty: '' }], addToInventory: false };
+  var state = { width: '', height: '', thickness: '', dxfNo: '', outputs: [{ partName: '', qty: '' }], addToInventory: false };
 
   var dims = document.createElement('div');
   dims.className = 'sheet-dims';
@@ -1358,6 +1358,22 @@ function renderExtraSheetForm() {
     field.appendChild(input);
     dims.appendChild(field);
   });
+
+  // Optional - which DXF this extra run was cut from. Purely descriptive
+  // (nothing computes off it); it's what makes the PO History report able to
+  // say which drawing an off-plan cut came from.
+  var dxfField = document.createElement('span');
+  var dxfLbl = document.createElement('span');
+  dxfLbl.className = 'sheet-dims-label';
+  dxfLbl.textContent = 'DXF';
+  var dxfInput = document.createElement('input');
+  dxfInput.type = 'text';
+  dxfInput.placeholder = 'DXF No. (optional)';
+  dxfInput.addEventListener('input', function (e) { state.dxfNo = e.target.value; });
+  dxfField.appendChild(dxfLbl);
+  dxfField.appendChild(dxfInput);
+  dims.appendChild(dxfField);
+
   wrap.appendChild(dims);
 
   var rowsWrap = document.createElement('div');
@@ -1439,6 +1455,7 @@ function renderExtraSheetForm() {
         width: Number(state.width) || 0,
         height: Number(state.height) || 0,
         thickness: Number(state.thickness) || 0,
+        dxfNo: state.dxfNo || '',
         partsProduced: partsProduced
       }
     }).then(function (result) {
