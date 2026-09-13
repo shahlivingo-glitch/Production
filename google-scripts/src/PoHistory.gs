@@ -67,18 +67,19 @@ function buildCuttingPlanVsActual(order, sheets) {
     var actualSheets = Number(actual.physicalSheets) || 0;
     var meta = completionMeta[String(sheetIndex)] || null;
 
+    // Per-part figures here are THIS SHEET'S contribution only - deliberately
+    // no planned/variance at this level: a part's requirement is a PO-wide
+    // figure that other sheets, extra cuts and inventory pulls also feed, so
+    // comparing it against one sheet's yield reads as a shortfall that isn't
+    // real. That comparison lives in buildPartTotals instead.
     var parts = (sheet.outputs || []).map(function (output) {
       var perSheet = Number(output.qty) || 0;
-      var plannedTotal = perSheet * plannedSheets;
-      var actualTotal = perSheet * actualSheets;
       return {
         partName: output.partName || '',
         size: output.size || '',
         isExtra: !!output.isExtra,
         perSheet: perSheet,
-        plannedTotal: plannedTotal,
-        actualTotal: actualTotal,
-        variance: actualTotal - plannedTotal
+        actualTotal: perSheet * actualSheets
       };
     });
 
@@ -97,6 +98,113 @@ function buildCuttingPlanVsActual(order, sheets) {
       doneBy: meta ? meta.by : null,
       parts: parts
     };
+  });
+}
+
+// One row per part, combining EVERY source that produced or covered it in
+// this PO - because a part's real position can't be read off any single
+// sheet. The same part routinely comes off more than one sheet (SHELF at
+// 4/sheet on one and 1/sheet on another), and can additionally be topped up
+// by an extra sheet cut, an ad-hoc logged extra, or a pull from the
+// Leftover Ledger. Per-sheet figures alone make a fully-covered part look
+// short by whatever the other sources contributed.
+//
+// Planned comes from the model's own Parts-in-One-Unit definition × the
+// order's unit qty - the true requirement - rather than being re-derived
+// from any sheet's yield. Parts with no per-unit definition (plan-level
+// extras like rips, or ad-hoc logged extras) have no requirement to compare
+// against, so they carry a null planned/variance and render as "—".
+function buildPartTotals(order, extras, cuttingSheets) {
+  var orderQty = Number(order.Qty) || 0;
+  var modelParts = {};
+  try {
+    modelParts = getModelParts(order.ModelName).partsPerUnit || {};
+  } catch (err) {
+    // model since deleted - actuals still aggregate, planned just stays null
+  }
+
+  var totals = {};
+  // Keyed on trimmed part name alone, deliberately:
+  //  - name only, because an extra sheet cut records just {partName: qty}
+  //    with no size, so keying on name+size would stop those contributions
+  //    ever joining the planned part they actually satisfy;
+  //  - trimmed, because plan outputs are hand-typed and stray whitespace is
+  //    real in this data ("Shelf rip" vs "Shelf rip "), which would silently
+  //    split one part's total across two rows and understate its coverage.
+  // Case is deliberately NOT folded - the Leftover Ledger matches parts with
+  // exact string comparison, and diverging from that here would make this
+  // report disagree with the stock it's reporting on.
+  function bucket(partName) {
+    var key = String(partName).trim();
+    if (!totals[key]) {
+      totals[key] = {
+        partName: key,
+        sizes: [],
+        perUnit: null,
+        plannedTotal: null,
+        fromPlanSheets: 0,
+        fromExtraSheets: 0,
+        fromExtraParts: 0,
+        fromInventory: 0,
+        isPlanExtra: false
+      };
+    }
+    return totals[key];
+  }
+
+  // Same-named outputs can legitimately carry different sizes (two rips off
+  // one sheet). They still aggregate as one part, but every distinct size is
+  // kept so the row never implies a single dimension it doesn't have.
+  function noteSize(b, size) {
+    var s = String(size || '').trim();
+    if (s && b.sizes.indexOf(s) === -1) b.sizes.push(s);
+  }
+
+  cuttingSheets.forEach(function (sheet) {
+    sheet.parts.forEach(function (p) {
+      if (!p.partName) return;
+      var b = bucket(p.partName);
+      b.fromPlanSheets += Number(p.actualTotal) || 0;
+      noteSize(b, p.size);
+      if (p.isExtra) b.isPlanExtra = true;
+    });
+  });
+
+  extras.forEach(function (e) {
+    var d = e.details || {};
+    if (e.type === 'extra-sheet') {
+      var produced = d.partsProduced || {};
+      Object.keys(produced).forEach(function (partName) {
+        bucket(partName).fromExtraSheets += Number(produced[partName]) || 0;
+      });
+    } else if (e.type === 'extra-part' && d.partName) {
+      var bp = bucket(d.partName);
+      bp.fromExtraParts += Number(d.qty) || 0;
+      noteSize(bp, d.size);
+    } else if (e.type === 'inventory-pull' && d.partName) {
+      var bi = bucket(d.partName);
+      bi.fromInventory += Number(d.qty) || 0;
+      noteSize(bi, d.size);
+    }
+  });
+
+  Object.keys(modelParts).forEach(function (partName) {
+    var def = modelParts[partName];
+    var perUnit = (def && typeof def === 'object') ? (Number(def.qty) || 0) : (Number(def) || 0);
+    var b = bucket(partName);
+    b.perUnit = perUnit;
+    b.plannedTotal = perUnit * orderQty;
+    if (def && typeof def === 'object') noteSize(b, def.size);
+  });
+
+  return Object.keys(totals).map(function (key) {
+    var b = totals[key];
+    b.size = b.sizes.join(', ');
+    b.actualTotal = b.fromPlanSheets + b.fromExtraSheets + b.fromExtraParts + b.fromInventory;
+    b.variance = (b.plannedTotal === null) ? null : (b.actualTotal - b.plannedTotal);
+    return b;
+  }).sort(function (a, b) {
+    return a.partName < b.partName ? -1 : (a.partName > b.partName ? 1 : 0);
   });
 }
 
@@ -299,6 +407,7 @@ function getPoFullHistory(poNumber) {
   return {
     order: getOrder(poNumber),
     cuttingSheets: cuttingSheets,
+    partTotals: buildPartTotals(order, extras, cuttingSheets),
     extras: extras,
     inventoryLog: inventoryLog,
     stockLog: stockLog,

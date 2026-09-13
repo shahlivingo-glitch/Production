@@ -85,6 +85,7 @@ function loadHistory() {
 
 function renderAll() {
   renderSummary();
+  renderPartTotals();
   renderCutting();
   renderExtras();
   renderInventory();
@@ -151,15 +152,13 @@ function renderCutting() {
     card.appendChild(meta);
 
     card.appendChild(buildTable(
-      ['Part', 'Size', 'Pcs/sheet', 'Planned total', 'Actual total', 'Variance'],
+      ['Part', 'Size', 'Pcs/sheet', 'Produced from this sheet'],
       s.parts.map(function (p) {
         return [
           p.partName + (p.isExtra ? ' <span class="muted">[extra]</span>' : ''),
           p.size || '<span class="muted">—</span>',
           String(p.perSheet),
-          String(p.plannedTotal),
-          '<strong>' + p.actualTotal + '</strong>',
-          fmtVariance(p.variance)
+          '<strong>' + p.actualTotal + '</strong>'
         ];
       }),
       'No parts defined on this sheet.'
@@ -167,6 +166,33 @@ function renderCutting() {
 
     host.appendChild(card);
   });
+}
+
+// The PO-wide position per part: what the order actually requires, against
+// everything that produced or covered it. This is the only place a part-level
+// variance is shown - per-sheet tables above deliberately show contribution
+// only, since no single sheet can settle a part that several sources feed.
+function renderPartTotals() {
+  var host = el('hist-part-totals');
+  host.innerHTML = '';
+  host.appendChild(buildTable(
+    ['Part', 'Size', 'Per unit', 'Planned total', 'From plan sheets', 'From extra cuts', 'From inventory', 'Combined actual', 'Variance'],
+    historyData.partTotals.map(function (p) {
+      var extraCuts = p.fromExtraSheets + p.fromExtraParts;
+      return [
+        p.partName + (p.isPlanExtra ? ' <span class="muted">[extra]</span>' : ''),
+        p.size || '<span class="muted">—</span>',
+        p.perUnit === null ? '<span class="muted">—</span>' : String(p.perUnit),
+        p.plannedTotal === null ? '<span class="muted">—</span>' : String(p.plannedTotal),
+        String(p.fromPlanSheets),
+        extraCuts ? String(extraCuts) : '<span class="muted">—</span>',
+        p.fromInventory ? String(p.fromInventory) : '<span class="muted">—</span>',
+        '<strong>' + p.actualTotal + '</strong>',
+        p.variance === null ? '<span class="muted">n/a</span>' : fmtVariance(p.variance)
+      ];
+    }),
+    'No parts recorded for this PO.'
+  ));
 }
 
 function renderExtras() {
