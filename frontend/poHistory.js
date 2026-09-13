@@ -19,6 +19,15 @@ function fmtActor(value) {
   return value ? value : '<span class="muted">—</span>';
 }
 
+// Date-only fields (delivery deadline) come back from Sheets as a full ISO
+// timestamp - show just the date rather than a misleading midnight-ish time.
+function fmtDate(value) {
+  if (!value) return '—';
+  var d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString();
+}
+
 // Variance reads as a plain dash at zero rather than "0", so a scan down the
 // column only stops on sheets/parts that actually diverged from plan.
 function fmtVariance(n) {
@@ -99,7 +108,7 @@ function renderSummary() {
     ['Created', new Date(o.createdAt).toLocaleString()],
     ['Party', o.partyName || '—'],
     ['DXF Ref', o.dxfRefNo || '—'],
-    ['Delivery Deadline', o.deliveryDeadline || '—'],
+    ['Delivery Deadline', fmtDate(o.deliveryDeadline)],
     ['Colour Plan', o.colourPlan || '—'],
     ['Plan', o.planName + (o.planVersionId ? ' <span class="muted">(versioned)</span>' : '')]
   ];
