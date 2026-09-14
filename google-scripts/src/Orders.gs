@@ -240,19 +240,48 @@ function persistOrderActiveSheets(row, sheets) {
   row.PlanVersionId = versionId;
 }
 
+// "+ Add Sheet" on the Cutting Plan card only pushes onto the browser's
+// working copy - the new sheet isn't in the saved plan, so its index is
+// legitimately one past the end of what's stored. Treat that as an append
+// (when the caller supplies the sheet's data) instead of rejecting it, which
+// is what lets "add a sheet -> fill it in -> Save / Mark Done" work without
+// first going through "Save as New Plan Version" - an action that would
+// reset every other sheet's cutting and bending progress.
+//
+// Appending is only safe because a new sheet always goes on the END:
+// flattenPlanOutputs walks sheets in order, so the new sheet's parts land at
+// the TAIL of the flattened list and every existing BendingCompletion index
+// still points at the part it always did. Anything further past the end
+// would leave a hole, so that asks the operator to save in order instead.
+// Mutates `sheets` in place when it appends.
+function ensureSheetIndexForWrite(sheets, idx, appendableSheetData) {
+  if (isNaN(idx) || idx < 0) {
+    throw new Error('Invalid sheet index');
+  }
+  if (idx < sheets.length) {
+    return;
+  }
+  if (idx === sheets.length && appendableSheetData) {
+    sheets.push(appendableSheetData);
+    return;
+  }
+  if (idx === sheets.length) {
+    throw new Error('This sheet is not saved to the plan yet - use the sheet card\'s Save button first.');
+  }
+  throw new Error('Save Sheet ' + (sheets.length + 1) + ' first - new sheets have to be saved in order.');
+}
+
 function setSheetComplete(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
     throw new Error('PO not found: ' + payload.poNumber);
   }
   var idx = Number(payload.sheetIndex);
-  if (idx < 0) {
-    throw new Error('Invalid sheet index');
-  }
   var sheets = getOrderActiveSheets(row);
-  if (idx >= sheets.length) {
-    throw new Error('Invalid sheet index');
-  }
+  // Only the completing edge may append: un-completing a sheet that was
+  // never saved isn't a real state to reach, and persisting on that edge
+  // would write plan data the operator never confirmed was cut.
+  ensureSheetIndexForWrite(sheets, idx, payload.completed ? payload.sheetData : null);
 
   // Whatever the operator was actually looking at when they hit "mark
   // done" (W/H/T, part outputs, qty-per-sheet) is what really got cut -
@@ -337,13 +366,10 @@ function saveSheetData(payload) {
     throw new Error('PO not found: ' + payload.poNumber);
   }
   var idx = Number(payload.sheetIndex);
-  if (idx < 0 || isNaN(idx)) {
-    throw new Error('Invalid sheet index');
-  }
   var sheets = getOrderActiveSheets(row);
-  if (idx >= sheets.length) {
-    throw new Error('Invalid sheet index');
-  }
+  // A brand-new sheet added on the card lands here first - this button is
+  // exactly how it gets into the plan, so appending is the point.
+  ensureSheetIndexForWrite(sheets, idx, payload.sheetData || {});
   var completion = parseJsonSafe(row.SheetCompletion, []);
   if (completion[idx]) {
     throw new Error('This sheet is already marked done - its cut data is locked in.');
@@ -369,13 +395,10 @@ function setSheetQtyOverride(payload) {
     throw new Error('PO not found: ' + payload.poNumber);
   }
   var idx = Number(payload.sheetIndex);
-  if (idx < 0 || isNaN(idx)) {
-    throw new Error('Invalid sheet index');
-  }
   var sheets = getOrderActiveSheets(row);
-  if (idx >= sheets.length) {
-    throw new Error('Invalid sheet index');
-  }
+  // No append here: this payload carries only a count, not the sheet itself,
+  // so an unsaved sheet gets pointed at its own Save button instead.
+  ensureSheetIndexForWrite(sheets, idx, null);
   var completion = parseJsonSafe(row.SheetCompletion, []);
   if (completion[idx]) {
     throw new Error('This sheet is already marked done - its actual cut count is locked in.');
