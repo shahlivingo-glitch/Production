@@ -136,54 +136,40 @@ function renderBendingPoSummary() {
   });
 }
 
-// What Cutting still owes this PO, called out at the top of the queue: every
-// entry whose sheet isn't marked done yet, grouped by part so the bender sees
-// one line per part rather than one per sheet. Quantities are that entry's
-// totalQty - for an uncut sheet that's still the planned figure, since no
-// actual count exists until Cutting marks it done.
+// What this PO is still short of, called out at the top of the bending queue.
+// Server-computed (see buildStillToCut): the order's requirement per part,
+// less everything actually cut so far. That covers both the part sitting on a
+// sheet Cutting hasn't marked done yet AND the part no sheet produces at all -
+// the latter has no sheet to "wait" on, and is exactly the one a bender would
+// otherwise only discover at assembly.
 function renderPendingCut() {
   var host = el('bending-pending-cut');
   if (!host) return;
   host.innerHTML = '';
 
-  var byPart = {};
-  var order = [];
-  (currentBendingQueue.entries || []).forEach(function (entry) {
-    if (entry.unlocked || entry.done) return;
-    var key = String(entry.partName || '').trim();
-    if (!key) return;
-    if (!byPart[key]) {
-      byPart[key] = { partName: key, size: entry.size || '', qty: 0, sheets: [] };
-      order.push(key);
-    }
-    byPart[key].qty += Number(entry.totalQty) || 0;
-    if (!byPart[key].size && entry.size) byPart[key].size = entry.size;
-    if (byPart[key].sheets.indexOf(entry.sheetLabel) === -1) byPart[key].sheets.push(entry.sheetLabel);
-  });
-
-  if (order.length === 0) return;
+  var rows = currentBendingQueue.stillToCut || [];
+  if (rows.length === 0) return;
 
   var totalQty = 0;
-  order.forEach(function (k) { totalQty += byPart[k].qty; });
+  rows.forEach(function (r) { totalQty += Number(r.stillToCut) || 0; });
 
   var box = document.createElement('div');
   box.className = 'cut-pending-alert';
 
   var title = document.createElement('div');
   title.className = 'cut-pending-title';
-  title.textContent = '⚠ Still to be cut — ' + order.length +
-    (order.length === 1 ? ' part' : ' parts') + ', ' + totalQty + ' pcs';
+  title.textContent = '⚠ Still to be cut — ' + rows.length +
+    (rows.length === 1 ? ' part' : ' parts') + ', ' + totalQty + ' pcs';
   box.appendChild(title);
 
-  order.forEach(function (key) {
-    var p = byPart[key];
+  rows.forEach(function (r) {
     var row = document.createElement('div');
     row.className = 'cut-pending-row';
     row.innerHTML =
-      '<span><strong>' + p.partName + '</strong>' +
-      (p.size ? ' <span class="muted">(' + p.size + ')</span>' : '') +
-      ' <span class="muted">— ' + p.sheets.join(', ') + '</span></span>' +
-      '<span class="cut-pending-qty">' + p.qty + ' pcs</span>';
+      '<span><strong>' + r.partName + '</strong>' +
+      (r.size ? ' <span class="muted">(' + r.size + ')</span>' : '') +
+      ' <span class="muted">— cut ' + r.cut + ' of ' + r.required + '</span></span>' +
+      '<span class="cut-pending-qty">' + r.stillToCut + ' pcs short</span>';
     box.appendChild(row);
   });
 

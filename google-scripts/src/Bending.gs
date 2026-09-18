@@ -113,6 +113,62 @@ function getExtraBendingEntries(poNumber, order) {
   return entries;
 }
 
+// What this PO still needs Cutting to produce: the model's per-unit
+// requirement x order qty, less everything actually cut so far.
+//
+// "Actually cut" counts only sheets Cutting has MARKED DONE - a sheet still
+// sitting in the plan has produced nothing yet - plus extra sheet cuts,
+// ad-hoc logged extras and anything pulled in from the Leftover Ledger.
+// Plan entries add back whatever was moved to Extra Inventory: those pieces
+// were still physically cut, they were just banked as surplus, so counting
+// them as "not cut" would report a part as owing when it isn't.
+//
+// This deliberately answers "which parts is the order still short of", not
+// "which sheets are unmarked" - a part the plan never cuts at all (no sheet
+// lists it) is the most important case and has no sheet to wait on.
+function buildStillToCut(order, entries, extraEntries) {
+  var orderQty = Number(order.Qty) || 0;
+  var modelParts = {};
+  try {
+    modelParts = getModelParts(order.ModelName).partsPerUnit || {};
+  } catch (err) {
+    return []; // model since deleted - nothing to compare a requirement against
+  }
+
+  var cut = {};
+  function addCut(partName, qty) {
+    var key = String(partName || '').trim();
+    if (!key) return;
+    cut[key] = (cut[key] || 0) + (Number(qty) || 0);
+  }
+  entries.forEach(function (e) {
+    if (!e.unlocked) return;
+    addCut(e.partName, (Number(e.totalQty) || 0) + (Number(e.movedQty) || 0));
+  });
+  extraEntries.forEach(function (e) {
+    addCut(e.partName, e.totalQty);
+  });
+
+  var out = [];
+  Object.keys(modelParts).forEach(function (partName) {
+    var def = modelParts[partName];
+    var perUnit = (def && typeof def === 'object') ? (Number(def.qty) || 0) : (Number(def) || 0);
+    var required = perUnit * orderQty;
+    if (!(required > 0)) return;
+    var key = String(partName).trim();
+    var alreadyCut = cut[key] || 0;
+    if (alreadyCut >= required) return;
+    out.push({
+      partName: key,
+      size: (def && typeof def === 'object' && def.size) ? def.size : '',
+      required: required,
+      cut: alreadyCut,
+      stillToCut: required - alreadyCut
+    });
+  });
+  return out.sort(function (a, b) { return b.stillToCut - a.stillToCut; });
+}
+
 function getBendingQueueForOrder(poNumber) {
   var order = findRowById('Orders', 'PoNumber', poNumber);
   if (!order) {
@@ -181,6 +237,8 @@ function getBendingQueueForOrder(poNumber) {
     return (r.modelName === order.ModelName || r.modelName === UNIVERSAL_MODEL_TAG) && r.qty > 0;
   });
 
+  var extraEntries = getExtraBendingEntries(poNumber, order);
+
   return {
     poNumber: String(order.PoNumber),
     modelName: String(order.ModelName),
@@ -189,7 +247,8 @@ function getBendingQueueForOrder(poNumber) {
     partyName: order.PartyName || '',
     cuttingStatus: order.CuttingStatus || 'pending',
     entries: entries,
-    extraEntries: getExtraBendingEntries(poNumber, order),
+    extraEntries: extraEntries,
+    stillToCut: buildStillToCut(order, entries, extraEntries),
     availableInventory: availableInventory,
     bendingStatus: order.BendingStatus || 'pending'
   };
