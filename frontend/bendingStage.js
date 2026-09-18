@@ -136,12 +136,6 @@ function renderBendingPoSummary() {
   });
 }
 
-// What this PO is still short of, called out at the top of the bending queue.
-// Server-computed (see buildStillToCut): the order's requirement per part,
-// less everything actually cut so far. That covers both the part sitting on a
-// sheet Cutting hasn't marked done yet AND the part no sheet produces at all -
-// the latter has no sheet to "wait" on, and is exactly the one a bender would
-// otherwise only discover at assembly.
 // Most part names in this data already carry their own size ("SIDE SUPPORT
 // (120x1780)"), so appending the configured size again just reads as a
 // stutter. Only show it when it adds something - and never for the "N/A"
@@ -154,59 +148,200 @@ function formatPartSizeSuffix(partName, size) {
   return ' <span class="muted">(' + s + ')</span>';
 }
 
-function renderPendingCut() {
-  var host = el('bending-pending-cut');
-  if (!host) return;
-  host.innerHTML = '';
+function partKey(name) {
+  return String(name || '').trim();
+}
 
-  var rows = currentBendingQueue.stillToCut || [];
-  if (rows.length === 0) return;
+// The plan's per-sheet rate for a part, if any sheet cuts it at all. Parts the
+// plan never produces (the worst shortfalls) have none, so their card simply
+// omits the "(N/sheet)" detail rather than inventing a rate.
+function perSheetRateForPart(partName) {
+  var key = partKey(partName);
+  var found = 0;
+  (currentBendingQueue.entries || []).forEach(function (e) {
+    if (!found && partKey(e.partName) === key) found = Number(e.qty) || 0;
+  });
+  return found;
+}
 
-  var totalQty = 0;
-  rows.forEach(function (r) { totalQty += Number(r.stillToCut) || 0; });
+// The Leftover Ledger row a shortfall should be pulled from. Matched on part
+// name rather than name+size: the ledger's size string comes from wherever the
+// part was logged and does not always match the model's own definition, so
+// insisting on both would leave usable stock stranded. An exact size match
+// still wins when there is one.
+function findInventoryForPart(partName, size) {
+  var key = partKey(partName).toLowerCase();
+  var matches = (currentBendingQueue.availableInventory || []).filter(function (r) {
+    return partKey(r.partName).toLowerCase() === key && r.qty > 0;
+  });
+  if (matches.length === 0) return null;
+  var wanted = String(size || '').trim().toLowerCase();
+  var exact = matches.filter(function (r) { return String(r.size || '').trim().toLowerCase() === wanted; });
+  var pool = exact.length ? exact : matches;
+  return pool.sort(function (a, b) { return b.qty - a.qty; })[0];
+}
 
-  var box = document.createElement('div');
-  box.className = 'cut-pending-alert';
+// A part this order is still short of, rendered as its own card inline in the
+// bending queue. Same shape as a normal row so the list reads continuously,
+// but red throughout and with nothing bendable on it - the only action here is
+// covering the gap from Extra Inventory.
+function buildStillToCutCard(row) {
+  var card = document.createElement('div');
+  card.className = 'cs-sheet-card still-to-cut-card';
 
-  var title = document.createElement('div');
-  title.className = 'cut-pending-title';
-  title.textContent = '⚠ Still to be cut — ' + rows.length +
-    (rows.length === 1 ? ' part' : ' parts') + ', ' + totalQty + ' pcs';
-  box.appendChild(title);
+  var label = document.createElement('label');
+  label.className = 'cs-sheet-done-label';
 
-  rows.forEach(function (r) {
-    var row = document.createElement('div');
-    row.className = 'cut-pending-row';
-    row.innerHTML =
-      '<span><strong>' + r.partName + '</strong>' + formatPartSizeSuffix(r.partName, r.size) +
-      ' <span class="muted">— cut ' + r.cut + ' of ' + r.required + '</span></span>' +
-      '<span class="cut-pending-qty">' + r.stillToCut + ' pcs short</span>';
-    box.appendChild(row);
+  // Kept for alignment with the bendable rows, but never actionable: there is
+  // nothing cut yet to mark as bent.
+  var checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.disabled = true;
+  checkbox.title = 'Nothing to bend yet - this part still has to be cut';
+
+  var perSheet = perSheetRateForPart(row.partName);
+  var text = document.createElement('span');
+  text.innerHTML = '<strong>' + row.partName + '</strong>' + formatPartSizeSuffix(row.partName, row.size) +
+    ' × ' + row.stillToCut +
+    (perSheet ? ' <span class="muted">(' + perSheet + '/sheet)</span>' : '') +
+    ' — <span class="still-to-cut-flag">Still to be cut</span>' +
+    ' <span class="muted">(cut ' + row.cut + ' of ' + row.required + ')</span>';
+
+  label.appendChild(checkbox);
+  label.appendChild(text);
+  card.appendChild(label);
+
+  var actions = document.createElement('div');
+  actions.className = 'still-to-cut-actions';
+  var source = findInventoryForPart(row.partName, row.size);
+
+  if (!source) {
+    // Offering the button with nothing behind it would just walk the operator
+    // into the server's "Only 0 pcs available".
+    var none = document.createElement('span');
+    none.className = 'still-to-cut-none';
+    none.textContent = 'None of this part in Extra Inventory to pull from.';
+    actions.appendChild(none);
+    card.appendChild(actions);
+    return card;
+  }
+
+  var qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.min = '1';
+  qtyInput.max = String(source.qty);
+  qtyInput.value = String(row.stillToCut);
+  qtyInput.disabled = !canEdit('bendingStage');
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-secondary';
+  btn.textContent = 'Pull part from Extra Inventory';
+  btn.disabled = !canEdit('bendingStage');
+  btn.addEventListener('click', function () {
+    pullShortfallFromInventory(row, source, qtyInput, btn);
   });
 
-  host.appendChild(box);
+  var avail = document.createElement('span');
+  avail.className = 'still-to-cut-none';
+  avail.textContent = source.qty + ' available' +
+    (source.modelName === 'Universal' ? ' (Universal)' : '');
+
+  actions.appendChild(qtyInput);
+  actions.appendChild(btn);
+  actions.appendChild(avail);
+  card.appendChild(actions);
+  return card;
+}
+
+function pullShortfallFromInventory(row, source, qtyInput, btn) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to change this.');
+    return;
+  }
+  var qty = Number(qtyInput.value);
+  if (!(qty > 0)) {
+    showFatalError('Enter a quantity greater than zero.');
+    return;
+  }
+  if (qty > source.qty) {
+    showFatalError('Only ' + source.qty + ' pcs available in Extra Part Inventory.');
+    return;
+  }
+  // Pulling exactly the outstanding shortfall is the expected move, so it goes
+  // through unchallenged. Anything else is a deliberate deviation worth
+  // confirming: it either leaves the order short or takes stock another order
+  // may be counting on.
+  if (qty !== row.stillToCut) {
+    if (!confirm('Pull qty differs from remaining shortfall (' + row.stillToCut + ').\n\n' +
+        'Confirm pulling ' + qty + ' pcs instead?')) {
+      return;
+    }
+  }
+  btn.disabled = true;
+  apiPost('pullFromExtraInventory', {
+    poNumber: currentBendingQueue.poNumber,
+    modelName: source.modelName,
+    partName: source.partName,
+    size: source.size,
+    qty: qty
+  }).then(function (result) {
+    if (!result.ok) {
+      btn.disabled = false;
+      showFatalError(result.error);
+      return;
+    }
+    currentBendingQueue = result.data;
+    renderBendingStatusPill();
+    renderBendingEntries();
+    renderExtraBendingEntries();
+  }).catch(function (err) {
+    btn.disabled = false;
+    showFatalError(err);
+  });
 }
 
 function renderBendingEntries() {
-  renderPendingCut();
   var body = el('bending-entries-body');
   body.innerHTML = '';
 
-  if (currentBendingQueue.entries.length === 0) {
-    // Only the true empty state - an order can have zero plan entries but
-    // still have extra-part tasks below, which get their own section/empty
-    // handling in renderExtraBendingEntries.
-    if (!currentBendingQueue.extraEntries || currentBendingQueue.extraEntries.length === 0) {
-      var empty = document.createElement('div');
-      empty.className = 'empty-state';
-      empty.textContent = 'This plan has no parts defined yet.';
-      body.appendChild(empty);
-    }
+  var entries = currentBendingQueue.entries || [];
+  var extraEntries = currentBendingQueue.extraEntries || [];
+  var shortRows = currentBendingQueue.stillToCut || [];
+
+  if (entries.length === 0 && extraEntries.length === 0 && shortRows.length === 0) {
+    var empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'This plan has no parts defined yet.';
+    body.appendChild(empty);
     return;
   }
 
-  currentBendingQueue.entries.forEach(function (entry) {
+  var shortByPart = {};
+  shortRows.forEach(function (r) { shortByPart[partKey(r.partName)] = r; });
+
+  // A shortfall card slots in after the LAST normal row for that part, so you
+  // read every sheet's contribution first and then what is still missing.
+  // Parts no sheet cuts at all have no such anchor and go at the end.
+  var lastIndexForPart = {};
+  entries.forEach(function (entry, i) { lastIndexForPart[partKey(entry.partName)] = i; });
+
+  var placed = {};
+  entries.forEach(function (entry, i) {
     body.appendChild(buildBendingEntryCard(entry));
+    var key = partKey(entry.partName);
+    if (shortByPart[key] && lastIndexForPart[key] === i && !placed[key]) {
+      placed[key] = true;
+      body.appendChild(buildStillToCutCard(shortByPart[key]));
+    }
+  });
+
+  shortRows.forEach(function (r) {
+    var key = partKey(r.partName);
+    if (!placed[key]) {
+      placed[key] = true;
+      body.appendChild(buildStillToCutCard(r));
+    }
   });
 }
 

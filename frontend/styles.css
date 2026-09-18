@@ -909,46 +909,61 @@ a { color: var(--color-accent); }
   animation: fadeInUp var(--duration-base) var(--ease-out) both;
 }
 
-/* Bending Stage's "still to be cut" alarm: the parts whose sheet Cutting
-   hasn't marked done yet, with how many of each. Deliberately louder than
-   .alert-banner - this is the one thing on the page that stops the bender
-   finishing the order, so it blinks until it's cleared.
-   The un-animated state is already the fully-visible one, so the global
-   prefers-reduced-motion rule (which freezes animations) leaves this red
-   and perfectly readable rather than stuck mid-fade. */
-.cut-pending-alert {
-  border: 2px solid var(--color-destructive);
+/* A part this order is still short of, shown inline in the bending queue
+   next to the part it belongs to rather than in a summary banner. Same card
+   shape as a normal bending row so the list stays aligned, but entirely red:
+   nothing on it can be bent yet, it's a chase-Cutting signal.
+   `color: inherit` on the muted/secondary text is what makes the WHOLE card
+   red rather than just the heading. */
+.still-to-cut-card {
+  border-color: var(--color-destructive);
   background: var(--color-destructive-soft);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
-}
-
-.cut-pending-title {
   color: var(--color-destructive);
-  font-weight: 700;
-  font-size: 14px;
-  margin-bottom: var(--space-2);
 }
 
-.cut-pending-row {
+.still-to-cut-card .muted,
+.still-to-cut-card strong,
+.still-to-cut-card label,
+.still-to-cut-card span {
+  color: inherit;
+}
+
+.still-to-cut-card .cs-sheet-done-label { cursor: default; }
+.still-to-cut-card .cs-sheet-done-label input[type="checkbox"] { cursor: not-allowed; }
+
+.still-to-cut-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-3);
+  align-items: center;
   flex-wrap: wrap;
-  padding: 3px 0;
-  font-size: 13px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
-.cut-pending-row + .cut-pending-row {
-  border-top: 1px dashed rgba(220, 38, 38, 0.35);
+.still-to-cut-actions input[type="number"] {
+  max-width: 90px;
+  border-color: var(--color-destructive);
 }
 
-.cut-pending-qty {
+.still-to-cut-actions .btn-secondary {
+  border-color: var(--color-destructive);
   color: var(--color-destructive);
+}
+
+.still-to-cut-none {
+  font-size: 12px;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+/* The blinking "Still to be cut" flag. text-decoration: blink is dead in
+   every current browser, so this is a keyframed opacity pulse. The
+   un-animated state is the fully-visible one, so the global
+   prefers-reduced-motion rule (which freezes animations) leaves the text red
+   and readable rather than stuck mid-fade. */
+.still-to-cut-flag {
   font-weight: 700;
-  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .cut-pending-inline {
@@ -960,13 +975,8 @@ a { color: var(--color-accent); }
   50% { opacity: 0.25; }
 }
 
-@keyframes cutPendingPulse {
-  50% { border-color: rgba(220, 38, 38, 0.3); }
-}
-
 @media (prefers-reduced-motion: no-preference) {
-  .cut-pending-alert { animation: cutPendingPulse 1.1s ease-in-out infinite; }
-  .cut-pending-title { animation: cutPendingBlink 1.1s step-end infinite; }
+  .still-to-cut-flag { animation: cutPendingBlink 1.1s step-end infinite; }
 }
 
 .sheets-required-box {
