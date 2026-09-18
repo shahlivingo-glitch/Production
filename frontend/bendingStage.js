@@ -142,6 +142,18 @@ function renderBendingPoSummary() {
 // sheet Cutting hasn't marked done yet AND the part no sheet produces at all -
 // the latter has no sheet to "wait" on, and is exactly the one a bender would
 // otherwise only discover at assembly.
+// Most part names in this data already carry their own size ("SIDE SUPPORT
+// (120x1780)"), so appending the configured size again just reads as a
+// stutter. Only show it when it adds something - and never for the "N/A"
+// placeholder used by parts that have no meaningful dimensions.
+function formatPartSizeSuffix(partName, size) {
+  var s = String(size || '').trim();
+  if (!s || s.toUpperCase() === 'N/A') return '';
+  var squash = function (v) { return String(v).toLowerCase().replace(/\s+/g, ''); };
+  if (squash(partName).indexOf(squash(s)) !== -1) return '';
+  return ' <span class="muted">(' + s + ')</span>';
+}
+
 function renderPendingCut() {
   var host = el('bending-pending-cut');
   if (!host) return;
@@ -166,8 +178,7 @@ function renderPendingCut() {
     var row = document.createElement('div');
     row.className = 'cut-pending-row';
     row.innerHTML =
-      '<span><strong>' + r.partName + '</strong>' +
-      (r.size ? ' <span class="muted">(' + r.size + ')</span>' : '') +
+      '<span><strong>' + r.partName + '</strong>' + formatPartSizeSuffix(r.partName, r.size) +
       ' <span class="muted">— cut ' + r.cut + ' of ' + r.required + '</span></span>' +
       '<span class="cut-pending-qty">' + r.stillToCut + ' pcs short</span>';
     box.appendChild(row);
