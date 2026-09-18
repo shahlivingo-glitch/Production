@@ -909,6 +909,66 @@ a { color: var(--color-accent); }
   animation: fadeInUp var(--duration-base) var(--ease-out) both;
 }
 
+/* Bending Stage's "still to be cut" alarm: the parts whose sheet Cutting
+   hasn't marked done yet, with how many of each. Deliberately louder than
+   .alert-banner - this is the one thing on the page that stops the bender
+   finishing the order, so it blinks until it's cleared.
+   The un-animated state is already the fully-visible one, so the global
+   prefers-reduced-motion rule (which freezes animations) leaves this red
+   and perfectly readable rather than stuck mid-fade. */
+.cut-pending-alert {
+  border: 2px solid var(--color-destructive);
+  background: var(--color-destructive-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.cut-pending-title {
+  color: var(--color-destructive);
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: var(--space-2);
+}
+
+.cut-pending-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.cut-pending-row + .cut-pending-row {
+  border-top: 1px dashed rgba(220, 38, 38, 0.35);
+}
+
+.cut-pending-qty {
+  color: var(--color-destructive);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cut-pending-inline {
+  color: var(--color-destructive);
+  font-weight: 600;
+}
+
+@keyframes cutPendingBlink {
+  50% { opacity: 0.25; }
+}
+
+@keyframes cutPendingPulse {
+  50% { border-color: rgba(220, 38, 38, 0.3); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cut-pending-alert { animation: cutPendingPulse 1.1s ease-in-out infinite; }
+  .cut-pending-title { animation: cutPendingBlink 1.1s step-end infinite; }
+}
+
 .sheets-required-box {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

@@ -68,8 +68,11 @@ function renderBendingDashboard() {
 
     var progress = document.createElement('div');
     progress.className = 'cs-po-card-sheets';
+    // The waiting-on-cutting count is red here too, so it's visible without
+    // opening the PO - but static, not blinking like the detail panel: a list
+    // of flashing rows would be noise rather than a signal.
     progress.innerHTML = '<strong>' + po.donePartsCount + ' / ' + po.availableParts + '</strong>parts bent' +
-      (po.availableParts < po.totalPartsInPlan ? ' <span class="muted">(' + (po.totalPartsInPlan - po.availableParts) + ' more waiting on cutting)</span>' : '');
+      (po.availableParts < po.totalPartsInPlan ? ' <span class="cut-pending-inline">(' + (po.totalPartsInPlan - po.availableParts) + ' more waiting on cutting)</span>' : '');
 
     card.appendChild(main);
     card.appendChild(progress);
@@ -133,7 +136,62 @@ function renderBendingPoSummary() {
   });
 }
 
+// What Cutting still owes this PO, called out at the top of the queue: every
+// entry whose sheet isn't marked done yet, grouped by part so the bender sees
+// one line per part rather than one per sheet. Quantities are that entry's
+// totalQty - for an uncut sheet that's still the planned figure, since no
+// actual count exists until Cutting marks it done.
+function renderPendingCut() {
+  var host = el('bending-pending-cut');
+  if (!host) return;
+  host.innerHTML = '';
+
+  var byPart = {};
+  var order = [];
+  (currentBendingQueue.entries || []).forEach(function (entry) {
+    if (entry.unlocked || entry.done) return;
+    var key = String(entry.partName || '').trim();
+    if (!key) return;
+    if (!byPart[key]) {
+      byPart[key] = { partName: key, size: entry.size || '', qty: 0, sheets: [] };
+      order.push(key);
+    }
+    byPart[key].qty += Number(entry.totalQty) || 0;
+    if (!byPart[key].size && entry.size) byPart[key].size = entry.size;
+    if (byPart[key].sheets.indexOf(entry.sheetLabel) === -1) byPart[key].sheets.push(entry.sheetLabel);
+  });
+
+  if (order.length === 0) return;
+
+  var totalQty = 0;
+  order.forEach(function (k) { totalQty += byPart[k].qty; });
+
+  var box = document.createElement('div');
+  box.className = 'cut-pending-alert';
+
+  var title = document.createElement('div');
+  title.className = 'cut-pending-title';
+  title.textContent = '⚠ Still to be cut — ' + order.length +
+    (order.length === 1 ? ' part' : ' parts') + ', ' + totalQty + ' pcs';
+  box.appendChild(title);
+
+  order.forEach(function (key) {
+    var p = byPart[key];
+    var row = document.createElement('div');
+    row.className = 'cut-pending-row';
+    row.innerHTML =
+      '<span><strong>' + p.partName + '</strong>' +
+      (p.size ? ' <span class="muted">(' + p.size + ')</span>' : '') +
+      ' <span class="muted">— ' + p.sheets.join(', ') + '</span></span>' +
+      '<span class="cut-pending-qty">' + p.qty + ' pcs</span>';
+    box.appendChild(row);
+  });
+
+  host.appendChild(box);
+}
+
 function renderBendingEntries() {
+  renderPendingCut();
   var body = el('bending-entries-body');
   body.innerHTML = '';
 
