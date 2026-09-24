@@ -449,6 +449,26 @@ post-deploy `runSetup` — verify the header row content itself (e.g. via
 a throwaway raw-row-dump action) if a new field seems to silently vanish,
 rather than assuming the write logic is wrong.
 
+## Performance notes
+
+- **Measured (Sept 2026):** every Sheet tab read costs ~150ms-1.3s
+  regardless of row count; Apps Script's own per-request overhead (before
+  any of our code runs) is ~2s at best and 9-12s about half the time,
+  occasionally an HTML "unable to open the file" page. The latter can only
+  be fixed by moving off Apps Script.
+- **Shared tab cache** (`readTabValues` in `SheetService.gs`): GET requests
+  read tab values from `CacheService` (30-min TTL), keyed by a per-tab
+  version that `appendRow`/`writeRowUpdates`/`deleteRowsWhere`,
+  `setupSpreadsheet` and the `onEdit` simple trigger bump. Brought warm
+  page-load server time from 150-1750ms to ~25ms. **POSTs never use it**
+  (`_useSharedCache` is only set in `doGet`), so writes always target
+  `_rowIndex` from a fresh read. Manual *structural* Sheet edits
+  (insert/delete/sort rows) don't fire `onEdit` - GET views can show them
+  stale for up to the TTL; any write to that tab clears it.
+- Any new GET action that *writes* must go through the SheetService write
+  helpers (they bump the version) - and must not trust a cached
+  `_rowIndex`; make it a POST instead.
+
 ## Key design decisions / gotchas
 
 1. **Google Sheets silently coerces numeric-looking text to real

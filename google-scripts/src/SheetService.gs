@@ -35,7 +35,10 @@ function getSheet(tabName) {
 }
 
 function rowsToObjects(sheet) {
-  var values = sheet.getDataRange().getValues();
+  return valuesToObjects(sheet.getDataRange().getValues());
+}
+
+function valuesToObjects(values) {
   var headers = values[0];
   var out = [];
   for (var i = 1; i < values.length; i++) {
@@ -66,13 +69,129 @@ var _sheetRowCache = {};
 
 function invalidateSheetCache(tabName) {
   delete _sheetRowCache[tabName];
+  bumpSharedTabVersion(tabName);
 }
 
 function getAllRows(tabName) {
   if (!_sheetRowCache.hasOwnProperty(tabName)) {
-    _sheetRowCache[tabName] = rowsToObjects(getSheet(tabName));
+    _sheetRowCache[tabName] = valuesToObjects(readTabValues(tabName));
   }
   return _sheetRowCache[tabName];
+}
+
+// --- Cross-request cache (CacheService) --------------------------------------
+// Each tab read costs ~150ms-1.3s of Sheets latency no matter how few rows
+// it has (measured live), and a page load touches 3-6 tabs incl. the
+// AppSessions/AppUsers auth check. So GET requests read tab values from the
+// script cache instead, keyed by a per-tab version that every write through
+// this file bumps (and onEdit() below bumps for manual edits in the Sheet).
+// Versioned keys make read/write races harmless: a reader that raced a write
+// can only populate the *old* version's key, which nobody reads any more.
+//
+// POST requests (every write action) never read from it - _useSharedCache
+// stays false - so the _rowIndex a write targets always comes from a fresh
+// Sheet read, even if someone inserted/deleted rows by hand (a structural
+// change onEdit doesn't see; those only affect GET display, until the TTL).
+var _useSharedCache = false;
+var SHARED_CACHE_TTL = 1800;   // seconds
+var SHARED_CACHE_CHUNK = 30000; // chars; CacheService caps a value at 100KB
+
+function sharedCache() {
+  try { return CacheService.getScriptCache(); } catch (err) { return null; }
+}
+
+function bumpSharedTabVersion(tabName) {
+  _sharedPrefetch = null;
+  var cache = sharedCache();
+  if (!cache) return;
+  try { cache.put('v:' + tabName, Utilities.getUuid(), SHARED_CACHE_TTL); } catch (err) {}
+}
+
+// Every CacheService call is a ~50-300ms round trip of its own, so a hit
+// must not cost one call per key. The first read in a request fetches every
+// tab's version in ONE getAll, then every tab's first chunk in a second
+// getAll - after that, most tab reads (data is small: one chunk) are free.
+// Chunk 0 is stored as "<chunkCount>|<json chunk>".
+var _sharedPrefetch = null;
+
+function prefetchSharedCache(cache) {
+  if (_sharedPrefetch) return _sharedPrefetch;
+  var tabs = Object.keys(TAB_HEADERS);
+  var versions = cache.getAll(tabs.map(function (t) { return 'v:' + t; }));
+  var missing = {};
+  var prefixes = {};
+  tabs.forEach(function (t) {
+    var ver = versions['v:' + t];
+    if (!ver) {
+      ver = Utilities.getUuid();
+      missing['v:' + t] = ver;
+    }
+    prefixes[t] = 'd:' + t + ':' + ver + ':';
+  });
+  if (Object.keys(missing).length) cache.putAll(missing, SHARED_CACHE_TTL);
+  var firstChunks = cache.getAll(tabs.map(function (t) { return prefixes[t] + '0'; }));
+  _sharedPrefetch = { prefixes: prefixes, firstChunks: firstChunks };
+  return _sharedPrefetch;
+}
+
+function readTabValues(tabName) {
+  var cache = _useSharedCache ? sharedCache() : null;
+  var prefix = null;
+  if (cache && TAB_HEADERS.hasOwnProperty(tabName)) {
+    try {
+      var pre = prefetchSharedCache(cache);
+      prefix = pre.prefixes[tabName];
+      var first = pre.firstChunks[prefix + '0'];
+      delete pre.firstChunks[prefix + '0']; // only trust it once per request
+      if (first != null) {
+        var bar = first.indexOf('|');
+        var count = Number(first.substring(0, bar));
+        var joined = first.substring(bar + 1);
+        var complete = count >= 1;
+        if (count > 1) {
+          var keys = [];
+          for (var i = 1; i < count; i++) keys.push(prefix + i);
+          var parts = cache.getAll(keys);
+          for (var j = 1; j < count; j++) {
+            if (parts[prefix + j] == null) { complete = false; break; }
+            joined += parts[prefix + j];
+          }
+        }
+        if (complete) return JSON.parse(joined, reviveCachedDate);
+      }
+    } catch (err) { prefix = null; }
+  }
+
+  var values = getSheet(tabName).getDataRange().getValues();
+
+  if (cache && prefix) {
+    try {
+      var json = JSON.stringify(values, function (k, v) {
+        return this[k] instanceof Date ? { __d: this[k].getTime() } : v;
+      });
+      var chunks = [];
+      for (var pos = 0; pos < json.length; pos += SHARED_CACHE_CHUNK) {
+        chunks.push(json.substr(pos, SHARED_CACHE_CHUNK));
+      }
+      if (chunks.length && chunks.length <= 200) {
+        var entries = {};
+        chunks.forEach(function (c, n) {
+          entries[prefix + n] = n === 0 ? chunks.length + '|' + c : c;
+        });
+        cache.putAll(entries, SHARED_CACHE_TTL);
+      }
+    } catch (err) { /* too big / quota - just don't cache */ }
+  }
+  return values;
+}
+
+function reviveCachedDate(k, v) {
+  return (v && typeof v === 'object' && typeof v.__d === 'number' && Object.keys(v).length === 1) ? new Date(v.__d) : v;
+}
+
+// Simple trigger: a manual cell edit in the Sheet invalidates that tab.
+function onEdit(e) {
+  try { bumpSharedTabVersion(e.range.getSheet().getName()); } catch (err) {}
 }
 
 function findRows(tabName, matchFn) {

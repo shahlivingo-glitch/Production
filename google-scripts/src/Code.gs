@@ -225,6 +225,7 @@ function doGet(e) {
   if (!handler) {
     return jsonOutput({ ok: false, error: 'Unknown action: ' + e.parameter.action });
   }
+  _useSharedCache = true; // reads only - see readTabValues in SheetService.gs
   try {
     checkAccess(e.parameter.token, e.parameter.action);
     return jsonOutput({ ok: true, data: handler(e.parameter) });
