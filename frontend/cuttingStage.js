@@ -251,8 +251,15 @@ function loadPendingOrders() {
   el('pending-error').style.display = 'none';
   el('pending-po-list').innerHTML = '';
 
-  apiGet('pendingOrders', {}).then(function (result) {
+  var shownCached = false;
+  apiGetCached('pendingOrders', {}, function (data) {
+    shownCached = true;
     el('pending-loading').style.display = 'none';
+    pendingOrders = data;
+    renderDashboard();
+  }).then(function (result) {
+    el('pending-loading').style.display = 'none';
+    if (!result.ok && shownCached) return;
     if (!result.ok) {
       el('pending-error').textContent = 'Could not load Pending POs: ' + result.error;
       el('pending-error').style.display = 'block';
@@ -262,6 +269,7 @@ function loadPendingOrders() {
     renderDashboard();
   }).catch(function (err) {
     el('pending-loading').style.display = 'none';
+    if (shownCached) return;
     el('pending-error').textContent = 'Could not load Pending POs: ' + (err && err.message ? err.message : err);
     el('pending-error').style.display = 'block';
   });

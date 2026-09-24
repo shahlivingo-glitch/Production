@@ -152,9 +152,20 @@ Management.
   (`requireAdmin` inside each `Auth.gs` function), as defense in depth
   on top of `checkAccess`.
 - **Frontend** (`frontend/app.js`): `requireAuth()` — every page except
-  `login.html` calls this first; redirects to login if there's no
-  session or the backend says it's no longer valid, otherwise refreshes
-  the cached permissions (they may have changed since last login).
+  `login.html` calls this first. It resolves **immediately** from the
+  locally stored user (no blocking round trip — that used to double
+  every page load on Apps Script's 4–20s latency) and runs `whoAmI` in
+  the background; if the permissions changed it reloads the page once.
+  Any `apiGet`/`apiPost` returning `"Not signed in."` clears the session
+  and redirects to login (except on `login.html` itself).
+  **Read-only list loads use `apiGetCached`** (stale-while-revalidate in
+  localStorage, keyed per user, cleared on logout): the last response
+  renders instantly, then re-renders when the live call returns. Used by
+  Dashboard, Pending POs, Pending Bending, Extra Inventory, Sheet Stock,
+  the Cutting Config model list and the PO form bundle (whose
+  `nextPoNumber` is never taken from cache). Don't use it for screens
+  holding editable state (e.g. `orderDetailBundle`) — a late re-render
+  would clobber the user's edits.
   `renderTopNav(activeKey)` rebuilds the nav from `NAV_PAGES` filtered by
   `canView(menuKey)`, plus User Management if admin, plus a
   username+Logout control — this *replaced* the old static per-page

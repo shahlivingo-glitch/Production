@@ -33,27 +33,43 @@ function loadOrdersFormBundle() {
   el('po-table-wrap').style.display = 'none';
   el('po-table-empty').style.display = 'none';
 
-  apiGet('ordersFormBundle', {}).then(function (result) {
+  // Cached bundle renders models/orders/stock instantly; the PO number is
+  // deliberately NOT taken from cache (it must be the live next number), so
+  // the field stays "Loading…" until the real call returns.
+  var shownCached = false;
+  apiGetCached('ordersFormBundle', {}, function (bundle) {
+    shownCached = true;
     el('po-loading').style.display = 'none';
+    applyOrdersFormBundle(bundle, false);
+  }).then(function (result) {
+    el('po-loading').style.display = 'none';
+    if (!result.ok && shownCached) {
+      el('po-number').value = '';
+      return;
+    }
     if (!result.ok) {
       el('po-error').textContent = 'Could not load Production Orders: ' + result.error;
       el('po-error').style.display = 'block';
       return;
     }
-    var bundle = result.data;
-    models = bundle.models;
-    renderModelDropdown();
-    allOrders = bundle.orders;
-    renderPoTable();
-    sheetStockMap = {};
-    bundle.sheetStock.forEach(function (r) { sheetStockMap[r.size] = r.qty; });
-    renderSheetsRequired();
-    el('po-number').value = bundle.nextPoNumber;
+    applyOrdersFormBundle(result.data, true);
   }).catch(function (err) {
     el('po-loading').style.display = 'none';
+    if (shownCached) return;
     el('po-error').textContent = 'Could not load Production Orders: ' + (err && err.message ? err.message : err);
     el('po-error').style.display = 'block';
   });
+}
+
+function applyOrdersFormBundle(bundle, isLive) {
+  models = bundle.models;
+  renderModelDropdown();
+  allOrders = bundle.orders;
+  renderPoTable();
+  sheetStockMap = {};
+  bundle.sheetStock.forEach(function (r) { sheetStockMap[r.size] = r.qty; });
+  renderSheetsRequired();
+  if (isLive) el('po-number').value = bundle.nextPoNumber;
 }
 
 function loadSheetStockForForm() {

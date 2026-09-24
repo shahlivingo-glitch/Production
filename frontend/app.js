@@ -57,33 +57,57 @@ function canEdit(menuKey) {
 }
 
 // Every page (except login.html) calls this first, before its own init.
-// Redirects to login.html if there's no session or the backend says it's no
-// longer valid (expired / revoked) - otherwise refreshes the cached user
-// object (permissions may have changed since last login) and resolves with it.
+// Resolves IMMEDIATELY from the locally stored session instead of waiting on
+// a whoAmI round trip - that round trip used to gate every page, and on Apps
+// Script's 4-20s per-call latency it roughly doubled every page load. It's
+// not needed for security: every backend action re-checks the token itself
+// (Code.gs checkAccess), and apiGet/apiPost below bounce to login.html on a
+// "Not signed in." response. whoAmI still runs, in the background, just to
+// catch revoked sessions / changed permissions - if the permissions changed
+// the page reloads once so the nav and edit/view gates pick them up.
 function requireAuth() {
   var stored = getStoredSession();
   if (!stored || !stored.token) {
     window.location.href = 'login.html';
     return new Promise(function () {}); // never resolves - we're navigating away
   }
-  return apiGet('whoAmI', {}).then(function (result) {
-    if (!result.ok) {
-      clearSession();
-      window.location.href = 'login.html';
-      return new Promise(function () {});
-    }
+  if (!stored.user) {
+    // Shouldn't happen (login always stores the user), but fall back to the
+    // old blocking check rather than rendering with no permissions.
+    return apiGet('whoAmI', {}).then(function (result) {
+      if (!result.ok) return redirectToLogin();
+      saveSession(stored.token, result.data);
+      return result.data;
+    }).catch(redirectToLogin);
+  }
+  apiGet('whoAmI', {}).then(function (result) {
+    if (!result.ok) return; // "Not signed in." already redirected inside apiGet
     saveSession(stored.token, result.data);
-    return result.data;
-  }).catch(function () {
-    clearSession();
-    window.location.href = 'login.html';
-    return new Promise(function () {});
-  });
+    if (JSON.stringify(result.data) !== JSON.stringify(stored.user)) {
+      window.location.reload();
+    }
+  }).catch(function () { /* network hiccup - keep the cached session */ });
+  return Promise.resolve(stored.user);
+}
+
+function redirectToLogin() {
+  clearSession();
+  clearApiCache();
+  window.location.href = 'login.html';
+  return new Promise(function () {});
+}
+
+// login.html handles its own "Not signed in." responses (it IS the login
+// page) - auto-redirecting there would just reload it.
+function isNotSignedIn(result) {
+  return result && result.ok === false && result.error === 'Not signed in.' &&
+    !/login\.html$/.test(window.location.pathname);
 }
 
 function doLogout() {
   var token = getToken();
   clearSession();
+  clearApiCache();
   if (token) {
     apiPost('logout', { token: token }).catch(function () {});
   }
@@ -204,7 +228,47 @@ function apiGet(action, params) {
   Object.keys(params || {}).forEach(function (k) {
     url.searchParams.set(k, params[k]);
   });
-  return fetchJsonWithRetry(url.toString(), [500, 1000, 1800]);
+  return fetchJsonWithRetry(url.toString(), [500, 1000, 1800]).then(function (result) {
+    return isNotSignedIn(result) ? redirectToLogin() : result;
+  });
+}
+
+// --- Stale-while-revalidate cache ------------------------------------------
+// Read-only page loads (dashboards, lists) show the last response they got
+// from localStorage instantly, then re-render when the live call returns.
+// Keyed per user so a shared browser never shows one user's data to
+// another; cleared on logout / session expiry. Any storage failure just
+// means no cache - the live call still runs.
+var API_CACHE_PREFIX = 'almirahCache:';
+
+function apiCacheKey(action, params) {
+  var user = getCurrentUser();
+  return API_CACHE_PREFIX + (user ? user.userId || user.username : '') + ':' + action + ':' + JSON.stringify(params || {});
+}
+
+function clearApiCache() {
+  try {
+    Object.keys(localStorage).forEach(function (k) {
+      if (k.indexOf(API_CACHE_PREFIX) === 0) localStorage.removeItem(k);
+    });
+  } catch (err) {}
+}
+
+// onCached(data) fires synchronously with the last stored data, if any.
+// The returned promise is apiGet's own result; a successful result is also
+// written back to the cache for next time.
+function apiGetCached(action, params, onCached) {
+  var key = apiCacheKey(action, params);
+  try {
+    var raw = localStorage.getItem(key);
+    if (raw && onCached) onCached(JSON.parse(raw));
+  } catch (err) {}
+  return apiGet(action, params).then(function (result) {
+    if (result && result.ok) {
+      try { localStorage.setItem(key, JSON.stringify(result.data)); } catch (err) {}
+    }
+    return result;
+  });
 }
 
 function apiPost(action, payload) {
@@ -213,7 +277,9 @@ function apiPost(action, payload) {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body)
-  }).then(parseApiResponse);
+  }).then(parseApiResponse).then(function (result) {
+    return (isNotSignedIn(result) && action !== 'login' && action !== 'logout') ? redirectToLogin() : result;
+  });
 }
 
 function showFatalError(err) {

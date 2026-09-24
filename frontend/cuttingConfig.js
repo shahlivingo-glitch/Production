@@ -50,8 +50,15 @@ function loadModels() {
   el('model-error').style.display = 'none';
   el('model-list').innerHTML = '';
 
-  apiGet('cuttingConfigModels', {}).then(function (result) {
+  var shownCached = false;
+  apiGetCached('cuttingConfigModels', {}, function (data) {
+    shownCached = true;
     el('model-loading').style.display = 'none';
+    models = data;
+    renderModelList();
+  }).then(function (result) {
+    el('model-loading').style.display = 'none';
+    if (!result.ok && shownCached) return;
     if (!result.ok) {
       el('model-error').textContent = 'Could not load Models: ' + result.error;
       el('model-error').style.display = 'block';
@@ -61,6 +68,7 @@ function loadModels() {
     renderModelList();
   }).catch(function (err) {
     el('model-loading').style.display = 'none';
+    if (shownCached) return;
     el('model-error').textContent = 'Could not load Models: ' + (err && err.message ? err.message : err);
     el('model-error').style.display = 'block';
   });

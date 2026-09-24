@@ -5,7 +5,13 @@ function afterSignedIn(result) {
 
 function initLogin() {
   // Already signed in with a still-valid session? Skip straight past login.
+  // With a cached user, go straight there - the next page's own background
+  // whoAmI check bounces back here if the session has since expired.
   var stored = getStoredSession();
+  if (stored && stored.token && stored.user) {
+    window.location.href = 'dashboard.html';
+    return;
+  }
   if (stored && stored.token) {
     apiGet('whoAmI', {}).then(function (result) {
       if (result.ok) {

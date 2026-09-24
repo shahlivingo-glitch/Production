@@ -14,8 +14,15 @@ function loadSheetStock() {
   el('stock-table-wrap').style.display = 'none';
   el('stock-empty').style.display = 'none';
 
-  apiGet('sheetStockBundle', { limit: 50 }).then(function (result) {
+  var shownCached = false;
+  apiGetCached('sheetStockBundle', { limit: 50 }, function (data) {
+    shownCached = true;
     el('stock-loading').style.display = 'none';
+    renderStockTable(data.stock);
+    renderLogTable(data.log);
+  }).then(function (result) {
+    el('stock-loading').style.display = 'none';
+    if (!result.ok && shownCached) return;
     if (!result.ok) {
       el('stock-error').textContent = 'Could not load stock: ' + result.error;
       el('stock-error').style.display = 'block';
@@ -25,6 +32,7 @@ function loadSheetStock() {
     renderLogTable(result.data.log);
   }).catch(function (err) {
     el('stock-loading').style.display = 'none';
+    if (shownCached) return;
     el('stock-error').textContent = 'Could not load stock: ' + (err && err.message ? err.message : err);
     el('stock-error').style.display = 'block';
   });

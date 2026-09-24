@@ -4,8 +4,14 @@ function loadExtraPartInventory() {
   el('inventory-table-wrap').style.display = 'none';
   el('inventory-empty').style.display = 'none';
 
-  apiGet('extraPartInventory', {}).then(function (result) {
+  var shownCached = false;
+  apiGetCached('extraPartInventory', {}, function (data) {
+    shownCached = true;
     el('inventory-loading').style.display = 'none';
+    renderInventoryTable(data);
+  }).then(function (result) {
+    el('inventory-loading').style.display = 'none';
+    if (!result.ok && shownCached) return;
     if (!result.ok) {
       el('inventory-error').textContent = 'Could not load Extra Part Inventory: ' + result.error;
       el('inventory-error').style.display = 'block';
@@ -14,6 +20,7 @@ function loadExtraPartInventory() {
     renderInventoryTable(result.data);
   }).catch(function (err) {
     el('inventory-loading').style.display = 'none';
+    if (shownCached) return;
     el('inventory-error').textContent = 'Could not load Extra Part Inventory: ' + (err && err.message ? err.message : err);
     el('inventory-error').style.display = 'block';
   });

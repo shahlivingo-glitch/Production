@@ -26,8 +26,15 @@ function loadPendingBendingOrders() {
   el('pending-error').style.display = 'none';
   el('pending-po-list').innerHTML = '';
 
-  apiGet('pendingBendingOrders', {}).then(function (result) {
+  var shownCached = false;
+  apiGetCached('pendingBendingOrders', {}, function (data) {
+    shownCached = true;
     el('pending-loading').style.display = 'none';
+    pendingBendingOrders = data;
+    renderBendingDashboard();
+  }).then(function (result) {
+    el('pending-loading').style.display = 'none';
+    if (!result.ok && shownCached) return;
     if (!result.ok) {
       el('pending-error').textContent = 'Could not load Pending Bending: ' + result.error;
       el('pending-error').style.display = 'block';
@@ -37,6 +44,7 @@ function loadPendingBendingOrders() {
     renderBendingDashboard();
   }).catch(function (err) {
     el('pending-loading').style.display = 'none';
+    if (shownCached) return;
     el('pending-error').textContent = 'Could not load Pending Bending: ' + (err && err.message ? err.message : err);
     el('pending-error').style.display = 'block';
   });

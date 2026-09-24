@@ -7,8 +7,15 @@ function loadDashboard() {
   el('dash-error').style.display = 'none';
   el('dash-content').style.display = 'none';
 
-  apiGet('dashboardSummary', {}).then(function (result) {
+  var shownCached = false;
+  apiGetCached('dashboardSummary', {}, function (data) {
+    shownCached = true;
     el('dash-loading').style.display = 'none';
+    el('dash-content').style.display = 'block';
+    renderDashboard(data);
+  }).then(function (result) {
+    el('dash-loading').style.display = 'none';
+    if (!result.ok && shownCached) return; // keep showing the last good data
     if (!result.ok) {
       el('dash-error').textContent = 'Could not load Dashboard: ' + result.error;
       el('dash-error').style.display = 'block';
@@ -18,6 +25,7 @@ function loadDashboard() {
     renderDashboard(result.data);
   }).catch(function (err) {
     el('dash-loading').style.display = 'none';
+    if (shownCached) return;
     el('dash-error').textContent = 'Could not load Dashboard: ' + (err && err.message ? err.message : err);
     el('dash-error').style.display = 'block';
   });
