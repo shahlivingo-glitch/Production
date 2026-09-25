@@ -90,7 +90,9 @@ after `runSetup`, not just that the API returns 200.
   checklist. Mirrors Cutting Stage's per-sheet checkbox flow but at
   part-output granularity: marking a sheet done in Cutting is what
   *unlocks* that sheet's part-output rows here: no plan editing or
-  versioning of its own, it just derives from Cutting's data.
+  versioning of its own, it just derives from Cutting's data. It also
+  moves stock both ways against the Leftover Ledger, and calls out what
+  the order is still short of — see Bending ↔ Leftover Ledger below.
 - **`frontend/extraPartInventory.html` — Extra Part Inventory.**
   Read-only table, auto-tallied running stock of extra/surplus parts
   logged from Cutting Stage. Also called the "Leftover Ledger" — it now
@@ -103,6 +105,12 @@ after `runSetup`, not just that the API returns 200.
   visible to every signed-in user regardless of menu grants: pending
   POs/Bending counts, multi-yield decisions still awaiting a choice,
   sheet sizes short on stock, recent activity. Pure read, no actions.
+- **`frontend/poHistory.html` — PO Detail / Full History.** Read-only
+  audit view for one PO, opened from a Dashboard Recent Activity row
+  (`?po=PO-0001`). Everything captured about that order on one scrollable
+  page: summary, per-part planned vs actual, sheet-by-sheet cutting,
+  extras, ledger movements, bending, and a merged chronological activity
+  log. See PO History below. No data entry of any kind.
 - **`frontend/login.html` — Sign In.** Shows a one-time "Create Admin
   Account" form instead of a login form until `AppUsers` has its first
   row (`bootstrapStatus`'s `hasAdmin`); a normal login form after that.
@@ -112,8 +120,11 @@ after `runSetup`, not just that the API returns 200.
   server-side). Create users, set each one's per-menu View/Edit/None,
   reset a password, delete a non-admin user.
 
-All eight pages link to each other via a shared top nav, built
-per-user by `renderTopNav()` in `app.js` — see Authentication below.
+All nine pages link to each other via a shared **left sidebar**, built
+per-user by `renderSideNav()` in `app.js` — see Authentication below.
+(It was a top nav originally; the function was renamed with the layout,
+so old references to `renderTopNav` are stale.) On narrow screens the
+sidebar collapses behind the `.mobile-nav-toggle` hamburger.
 
 ## Authentication & Permissions
 
@@ -166,8 +177,8 @@ Management.
   `nextPoNumber` is never taken from cache). Don't use it for screens
   holding editable state (e.g. `orderDetailBundle`) — a late re-render
   would clobber the user's edits.
-  `renderTopNav(activeKey)` rebuilds the nav from `NAV_PAGES` filtered by
-  `canView(menuKey)`, plus User Management if admin, plus a
+  `renderSideNav(activeKey)` rebuilds the sidebar from `NAV_PAGES`
+  filtered by `canView(menuKey)`, plus User Management if admin, plus a
   username+Logout control — this *replaced* the old static per-page
   `<nav>` HTML entirely. `canView`/`canEdit(menuKey)` read the cached
   user's permissions (admins are handed a synthetic all-`'edit'` map by
@@ -221,8 +232,19 @@ animation library added; stays framework-free like the rest of the app.
 
 ## Data model (current, as of `SheetService.gs`)
 
-- `Models`: ModelName, PartsPerUnit (JSON `{partName: qtyPerUnit}` —
-  **shared across every plan under that model**), UpdatedAt.
+- `Models`: ModelName, PartsPerUnit (JSON
+  `{partName: {qty, size}}` — **shared across every plan under that
+  model**; `size` is a free-text label like `"510X890"`, or `"N/A"` for
+  parts with no meaningful dimensions. A bare number
+  (`{partName: qtyPerUnit}`) is the older shape and is still read
+  correctly everywhere — always go through the
+  `typeof def === 'object' ? def.qty : def` dance rather than assuming
+  one), UpdatedAt. **This is the order's actual requirement**: PO-wide
+  "how many of this part does the order need" is always
+  `qty × Orders.Qty`, never re-derived from a sheet's yield.
+  `createCuttingConfigModel` always writes `{}` — parts are set
+  afterwards via `saveModelParts`, so a script that creates a model and
+  expects its parts to exist in one call gets an empty map.
 - `CuttingPlans`: ModelName, PlanName, Sheets (JSON array of
   `{width, height, thickness, outputs: [{partName, qty, multiYield?,
   yieldPerSheet?}]}` — one physical sheet per unit *unless* an output is
@@ -258,14 +280,37 @@ animation library added; stays framework-free like the rest of the app.
   BendingLeftoverConsumed (JSON `{ "<entryIndex>": true }` — guards
   against double-consuming the Leftover Ledger on a bending entry's
   repeat/bulk completion, mirroring SheetStockConsumed; see Leftover
-  Ledger Checks below).
+  Ledger Checks below. Extra-derived entries share this map under an
+  `"extra:<extraKey>"` prefix). ExtraBendingCompletion (JSON
+  `{ "<extraKey>": true }` — completion for bending tasks that come from
+  `CuttingExtras` rather than the plan; **string-keyed, not a positional
+  array**, because these can be logged at any time after the plan's
+  shape is fixed). PlanEntryInventoryMoves (JSON
+  `{ "<entryIndex>": qtyMoved }` — a running total of how much of that
+  plan entry has been banked to the Leftover Ledger; see Bending ↔
+  Leftover Ledger below). SheetCompletionMeta / BendingCompletionMeta /
+  ExtraBendingCompletionMeta (JSON `{ "<index-or-key>": {at, by} }` —
+  when each thing was marked done and by whom. The completion arrays
+  themselves are bare booleans, so without these the PO History report
+  could say nothing about timing; cleared again on un-complete so they
+  never describe a completion that was undone).
 - `PlanVersions`: VersionId, ModelName, VersionNumber (per-model
   counter, 1-based), SourcePlanName, Sheets (same shape as
   CuttingPlans.Sheets), CreatedAt, Note. Only ever created by an
   explicit user action — see Versioning.
 - `CuttingExtras`: ExtraId, PoNumber, Type (`extra-sheet` |
-  `extra-part`), Details (JSON, shape varies by Type — see Extras),
-  Timestamp.
+  `extra-part` | `inventory-pull`), Details (JSON, shape varies by Type
+  — see Extras), Timestamp, AddedToInventory (JSON
+  `{ "<partName-or-'main'>": true }` — which part(s) of this log have
+  already been posted to the Leftover Ledger. Single source of truth
+  shared by the logging-time "also add to inventory" checkbox and
+  Bending's second-chance button, so the two can never double-post the
+  same part. `'main'` is the key for an `extra-part` log, which always
+  has exactly one part; an `extra-sheet` log uses real part names since
+  it can produce several). **Every row here also becomes a Bending
+  task** (`getExtraBendingEntries`), not just a ledger/stock record.
+  `inventory-pull` rows are created by Bending pulling stock *out* of
+  the ledger, and are pre-marked `{main: true}` since they came from it.
 - `ExtraPartInventory`: ModelName (or the literal string `Universal`),
   PartName, Size, Qty (running total — added to by `addToExtraPartInventory`,
   subtracted from by `consumeExtraPartInventory`, floored at 0, never
@@ -273,9 +318,17 @@ animation library added; stays framework-free like the rest of the app.
   from multi-yield "extra full sheet" surplus, and from Bending
   auto-consuming it — see Leftover Ledger Checks below — not directly
   edited by a user anywhere in the UI.
+- `ExtraInventoryLog`: LogId, ModelName, PartName, Size, Delta
+  (+added / −consumed), Reason, PoNumber, Actor, Timestamp, Note.
+  Append-only movement history for the Leftover Ledger, the counterpart
+  to `SheetStockLog`. `ExtraPartInventory` only holds running totals, so
+  this is the only record of *who* moved stock and *why* — and it's what
+  PO History reads to show a PO's ledger movements. Written
+  best-effort: a failed audit write never blocks the stock change.
 - `SheetStock`: Size (`"<w>x<h>x<t>"` canonical key from
   `sheetSizeKey()`), Width, Height, Thickness, Qty (running on-hand, MAY
-  go negative), UpdatedAt.
+  go negative), UpdatedAt. A size row is created on first movement, so
+  cutting a sheet size nobody has received yet just makes a negative row.
 - `SheetStockLog`: LogId, Size, Delta (+recv / −consume), Reason
   (`received` | `po-cut` | `extra-sheet-cut` | `adjustment`), PoNumber,
   Timestamp, Note. Append-only.
@@ -371,14 +424,16 @@ differently — Cutting only informs, Bending acts:
   under any output row whose part is in that map ("N pcs already available
   in leftover stock"). Pure read, computed fresh on every page load — never
   changes `computeOrderSheetPlan`'s math, never consumes anything.
-- **Bending Stage (acts on it)**: `getBendingQueueForOrder` attaches
-  `leftoverAvailable` to each not-yet-done, non-extra entry (0 once done).
-  The UI shows an actionable banner ("pull and use those first") instead of
-  a quiet note. Marking that entry done consumes
-  `min(entry.qty, leftoverAvailable)` from the ledger via
-  `consumeExtraPartInventory` (floors at 0, never goes negative) — so
-  leftover stock used for this task isn't still sitting there to be offered
-  to a future order.
+- **Bending Stage (offers to act on it)**: `getBendingQueueForOrder`
+  attaches `leftoverAvailable` to each not-yet-done, non-extra entry (0 once
+  done). The entry card shows a **checkbox** — "N pcs already available in
+  leftover stock — use these instead of bending fresh ones?" — unchecked by
+  default. Only if it's ticked does marking that entry done consume
+  `min(entry.qty, leftoverAvailable)` via `consumeExtraPartInventory`
+  (floors at 0, never goes negative). This used to happen automatically on
+  completion; it's an explicit per-entry choice now, because whether to burn
+  reserved stock or bend the freshly-cut parts is the operator's call, not
+  something to infer from a checkbox that means "I bent this".
 
 Both directions key off **non-extra rows only** — extras never auto-post
 to or draw from the ledger either way (matches `applyCutStockAndLedger`'s
@@ -387,16 +442,63 @@ own `!r.isExtra` scoping), and the lookup is always
 one `applyCutStockAndLedger` posts surplus to.
 
 Bending's consumption only fires on a genuine not-done → done *transition*
-in the current call (`consumeBendingLeftoverIfNew`'s `wasDone` check),
-**not** just "whenever `BendingLeftoverConsumed` lacks an entry" — this
-matters specifically for `markAllBendingComplete`, which (like
-`markAllSheetsComplete`) unconditionally touches every eligible entry on
-every call. Without the transition check, the *first* bulk-complete click
-after this feature shipped would retroactively consume ledger stock for
-entries that were already bent long ago, for reasons that have nothing to
-do with today's click. `setBendingComplete` (single-entry) additionally
+in the current call (`consumeBendingLeftoverIfRequested`'s `wasDone` check),
+**not** just "whenever `BendingLeftoverConsumed` lacks an entry". It also
 guards on `BendingLeftoverConsumed` itself, mirroring `SheetStockConsumed`,
-so an uncheck→recheck of the same entry can't double-consume either.
+so an uncheck→recheck of the same entry can't double-consume. Both guards
+are load-bearing and neither replaces the other: `wasDone` is derived from
+completion state, which **resets on uncheck**, so a
+uncheck→recheck-with-the-box-ticked cycle would consume twice if
+`BendingLeftoverConsumed` weren't also consulted. That was a real bug,
+caught in live testing. Extra-derived entries (`setExtraBendingComplete`)
+share the same map under an `"extra:<extraKey>"` prefix for exactly this
+reason.
+
+`markAllBendingComplete` **never touches the ledger at all** — "use
+inventory" is a per-entry decision with no sensible per-entry UI inside one
+bulk action, so bulk-complete only records completion.
+
+### Bending ↔ Leftover Ledger (moving stock both ways)
+
+Beyond *consuming* leftover stock above, Bending Stage moves parts in and
+out of `ExtraPartInventory` explicitly. All of it is in `Bending.gs`:
+
+- **Move surplus out** — `moveEntryQtyToInventory(poNumber, entryIndex,
+  qty)`. Banks part of a plan entry's produced qty to the ledger, for when
+  a run produced more than this PO needs. Partial: the running total lives
+  in `Orders.PlanEntryInventoryMoves`, and `getBendingQueueForOrder`
+  returns each entry's `totalQty` already **net** of it, dropping the entry
+  from the queue entirely once nothing is left to bend. Refused once the
+  entry is bent or before its sheet is cut — surplus only makes sense as
+  flat, not-yet-bent stock.
+- **Pull stock in** — `pullFromExtraInventory(poNumber, modelName,
+  partName, size, qty)`. Takes stock *out* of the ledger and injects it as
+  a new bending task for this PO, so bending can proceed before Cutting has
+  finished (or even started) that part's own sheet. Implemented as a
+  `CuttingExtras` row of type `inventory-pull` reusing the existing
+  extra-entry machinery rather than a fourth parallel tracking table.
+- **Second chance to bank a logged extra** —
+  `addExtraToInventoryNow(poNumber, extraKey)` in `CuttingExtras.gs`, for
+  whoever didn't tick "also add to Extra Part Inventory" when logging the
+  extra during cutting. Guarded by `AddedToInventory` so it can't
+  double-post.
+
+**What's still to be cut** (`buildStillToCut`) is the order's requirement
+per part — `Models.PartsPerUnit[part].qty × Orders.Qty` — minus everything
+actually cut. "Actually cut" counts only sheets Cutting has **marked
+done**, plus extra sheet cuts, logged extras and inventory pulls; plan
+entries add back whatever was moved to inventory, since those pieces were
+still cut, just banked. Each shortfall renders as its own red card inline
+in the bending list (after the last normal row for that part; parts no
+sheet cuts at all have no anchor and go last), offering a pull sized to the
+shortfall.
+
+This deliberately answers *"which parts is the order still short of"*, not
+*"which sheets are unmarked"*. An earlier version keyed off unmarked sheets
+and showed **nothing** on a real PO whose sheets were all marked done but
+which was short 278 pcs across 5 parts — including parts no sheet in the
+plan cuts at all, which by definition have no sheet to be waiting on and
+would otherwise surface only at assembly.
 
 ### Bulk Unit Plan
 
@@ -449,6 +551,36 @@ post-deploy `runSetup` — verify the header row content itself (e.g. via
 a throwaway raw-row-dump action) if a new field seems to silently vanish,
 rather than assuming the write logic is wrong.
 
+### PO History (`PoHistory.gs` → `poHistory.html`)
+
+One read-only action, `poFullHistory(poNumber)`, assembles the whole audit
+view; the page renders it and writes nothing. Sections:
+
+- **Parts — planned vs actual (all sources)** (`buildPartTotals`): one row
+  per part, planned from `PartsPerUnit × Orders.Qty`, actual summed across
+  *every* source — all plan sheets producing it, extra sheet cuts, logged
+  extras, inventory pulls. **This is the only part-level variance in the
+  app**; the per-sheet tables deliberately show that sheet's contribution
+  only. Computing variance per sheet made any part fed by more than one
+  source read as short by whatever the others contributed (PO-0001's SHELF
+  showed −52 on one sheet while another sheet supplied the rest).
+- **Cutting sheet-by-sheet** (`buildCuttingPlanVsActual`): planned vs
+  actual sheet counts and each sheet's own output, plus who marked it done
+  and when (from `SheetCompletionMeta`).
+- **Extras**, **ledger movements** (`ExtraInventoryLog` filtered to this
+  PO), **bending** (`buildBendingPlanVsActual` + extra-derived tasks), and
+  a merged chronological **activity log** (`buildActivityLog`).
+
+Part names are aggregated on a **trimmed** key. Plan outputs are hand-typed
+and PO-0001 genuinely contains both `"Shelf rip"` and `"Shelf rip "`, which
+otherwise split one part across two rows. Case is deliberately *not* folded
+— the Leftover Ledger matches parts by exact string, and diverging here
+would make the report disagree with the stock it reports on. Same-named
+outputs with different sizes still aggregate, but list every distinct size.
+
+Timing metadata only exists from when `*CompletionMeta` shipped, so older
+completions legitimately show no actor/timestamp.
+
 ## Performance notes
 
 - **Measured (Sept 2026):** every Sheet tab read costs ~150ms-1.3s
@@ -468,6 +600,16 @@ rather than assuming the write logic is wrong.
 - Any new GET action that *writes* must go through the SheetService write
   helpers (they bump the version) - and must not trust a cached
   `_rowIndex`; make it a POST instead.
+- **Bundle actions.** Because the per-call overhead dominates, a screen
+  that needs several reads gets one action returning all of them rather
+  than N parallel calls — parallelism doesn't help when each call pays
+  its own dispatch cost. `getOrderDetailBundle` (Cutting Stage: was 3
+  sequential waves, 9-15s to open a PO), `getOrdersFormBundle` (PO form:
+  models + orders + stock + next PO number), `getSheetStockBundle`
+  (levels + movements), and `getBendingQueueForOrder` (which also carries
+  `availableInventory` so the pull picker opens instantly). The
+  per-request read cache in `SheetService.gs` dedupes any tab these
+  sub-calls share, so bundling costs nothing extra server-side.
 
 ## Key design decisions / gotchas
 
@@ -529,14 +671,46 @@ rather than assuming the write logic is wrong.
    row; the previous version is never deleted or overwritten. Switching
    to an older version via "Use for this PO" just re-points
    `Orders.PlanVersionId` — no new row.
+
+   **Narrow exception added later** (`persistOrderActiveSheets` in
+   `Orders.gs`): the per-sheet **Save** button (`saveSheetData`) and
+   **Mark Done** (`setSheetComplete`, which now takes the edited sheet as
+   `payload.sheetData`) both persist that one sheet's edited W/H/T and
+   outputs, and if the PO had no version yet they create its first one. This does *not* reopen the
+   old bug: it happens only on a deliberate user action, it updates the
+   PO's existing version **in place** when there is one (rather than
+   piling up rows), and crucially it **never resets** any other sheet's
+   completion/status the way `saveNewPlanVersion` does — that reset is
+   what makes the big button a structural act, and it would be wrong to
+   wipe the whole PO's progress because one sheet's numbers were
+   corrected. Before this, edits made on a sheet card were silently
+   discarded unless the operator remembered the separate "Save as New
+   Plan Version" click — and worse, the stock/ledger booking at mark-done
+   time used the **stale** saved dimensions rather than what was on
+   screen.
+
+   A sheet added with "+ Add Sheet" exists only in the browser's working
+   copy, so its index is legitimately one past the end of the saved plan.
+   Writes that carry the sheet's own data treat that as an **append**
+   (`ensureSheetIndexForWrite`); anything further past the end would
+   leave a hole and is refused with a message naming the sheet to save
+   first. Appending is safe only because a new sheet always goes on the
+   end, so `flattenPlanOutputs` indices — and therefore existing
+   `BendingCompletion` entries — keep pointing at the same parts.
 6. **Sheet completion is per-PO, indexed to whichever plan is currently
    active** (`Orders.SheetCompletion`, a boolean array). It resets to
    all-`false` — and `CuttingStatus` resets to `pending` — every time
    the active version changes (new version saved, or an old one
    reactivated), since sheet *indices* from a different plan don't mean
-   the same thing. `CuttingStatus` is never set directly by a
-   button — it's always `computeCuttingStatus(completion, totalCount)`,
-   i.e. `complete` iff every tracked sheet is checked. **Bending mirrors
+   the same thing. `CuttingStatus` is still only ever
+   `computeCuttingStatus(completion, totalCount)` — never set by hand —
+   but **ticking individual sheets no longer completes the PO**, even if
+   the one you tick happens to be the last: only the explicit
+   **`markAllSheetsComplete`** recomputes it upward. `setSheetComplete`
+   just records the tick (and still drops a `complete` PO back to
+   `pending` on an un-tick, since it genuinely isn't complete any more).
+   Finishing a PO is a deliberate act, not a side effect of the last
+   checkbox. **Bending mirrors
    this exactly, one level down**: `Orders.BendingCompletion` is indexed
    to the flattened list of *output rows* (part+qty per sheet, not
    per-sheet) from that same active plan version, resets together with
@@ -638,6 +812,39 @@ rather than assuming the write logic is wrong.
    like data corruption but isn't; re-check with a higher `-Depth`
    before concluding there's a real bug.
 
+## Testing against the live system
+
+There is no staging copy and no test suite — this app is verified by
+driving the **live** deployment, which is also the user's real production
+data. Conventions that keep that safe:
+
+- **Disposable fixtures**: create a `__XXTEST_…__`-prefixed model, exercise
+  the feature, then delete the model plus every row it touched (Orders,
+  PlanVersions, CuttingExtras, ExtraPartInventory, SheetStockLog). Cleanup
+  is done by temporarily adding a `debugCleanupTestPrefix` action to
+  `Code.gs`, calling it once, then **removing it and redeploying clean** —
+  confirm with `git diff --stat google-scripts/` showing no residue and a
+  follow-up call returning "Unknown action".
+- **Always give test sheets fictitious dimensions** (e.g. `7777×8888`).
+  Marking a sheet done deducts real `SheetStock`, so a test plan using a
+  real size silently eats real inventory — and a cleanup that then deletes
+  that size's row destroys a real stock record. This happened: a test
+  consumed `900×2500×0.45` and the cleanup deleted `1250×2500×0.5`
+  entirely; both had to be restored by hand from the counted list.
+- **Never assume a difference is yours.** Before "restoring" anything,
+  read `SheetStockLog` / `ExtraInventoryLog` — a gap is just as likely to
+  be genuine production activity between sessions. A missing 14 sheets
+  turned out to be a real `po-cut` on PO-0001 two days later.
+- **Flaky responses are expected**: Apps Script intermittently returns an
+  HTML error page instead of JSON, and latency swings from ~3s to 60s+.
+  Wrap verification calls in retries, and re-read to confirm rather than
+  concluding a write failed — the write often succeeded anyway.
+- For browser checks, seeding `localStorage.almirahSession` directly beats
+  driving the login form, whose round trip is the flakiest call of all.
+  Note `#dashboard-view` is visible in the markup by default, so waiting on
+  it proves nothing about init having run; wait for the sidebar to have
+  children instead.
+
 ## Known follow-ups / open items
 
 - Login/auth exists now (see "Authentication & Permissions" above) but
@@ -656,10 +863,14 @@ rather than assuming the write logic is wrong.
   exists for either — only Models/Plans (Cutting Configuration side)
   support delete. An abandoned or mistaken PO currently has to be
   cleaned up by hand in the Sheet.
-- `ExtraPartInventory` has no consumption/deduction flow — it only ever
-  accumulates (from logged extras + multi-yield surplus). Nothing draws
-  it back down (using stocked extra parts against a new order isn't
-  wired up).
+- ~~`ExtraPartInventory` has no consumption/deduction flow~~ **Done** —
+  Bending Stage now both draws it down (the per-entry "use these instead
+  of bending fresh ones" checkbox, and pulling stock in to cover a
+  shortfall) and adds to it (banking a plan entry's surplus, plus the
+  second-chance button for a logged extra). See Bending ↔ Leftover Ledger
+  above. Still missing: any way to **edit** the ledger directly — the
+  Extra Part Inventory page remains read-only, so a miscount can only be
+  corrected by hand in the Sheet.
 - Raw-sheet stock (`SheetStock`) deducts at cut time and can go
   negative; it is **not** reversed if a sheet is un-checked (matches the
   extras prompt). Mistaken deductions are fixed via the Correction form
@@ -674,8 +885,11 @@ rather than assuming the write logic is wrong.
   operator types (0×0×0 if left blank → a junk stock row). No validation
   that the size matches a real stocked size.
 - Bending has no extras-logging equivalent (no "extra bent part" concept
-  was asked for) and no plan editing of its own — it's a pure derived
-  view over Cutting's data. If a future stage (Assembly, Fitting, ...)
+  was asked for) and no plan editing of its own. It is **no longer purely
+  derived**, though: it writes `PlanEntryInventoryMoves`, creates
+  `inventory-pull` rows in `CuttingExtras`, and moves ledger stock both
+  ways — it just doesn't touch the *plan*. If a future stage (Assembly,
+  Fitting, ...)
   needs the same "unlocked by the previous stage" pattern, Bending.gs's
   shape (flatten the source array once, gate completion on the prior
   stage's completion array, derive status the same walked-index way) is
