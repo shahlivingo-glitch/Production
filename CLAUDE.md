@@ -33,11 +33,24 @@ post-rebuild state.
 
 ## Live deployment identifiers
 
-- Apps Script Script ID: `1_tN8iCH5OUV9dnezTXuR4fIE0Mn_fnL0aMnwffrCbx_BXfXjEu-bHePT`
-  (in `google-scripts/.clasp.json`)
-- Apps Script Deployment ID: `AKfycbycgBW8zp3sF20h90ZqpxLFGQ-kBO2Z6yKCkjcnnXbXMcr1ZI2HSqa3onKmu-n70n6Qcw`
+- Apps Script Script ID: `1jCYcl-EMegeOHlrrkvEilZOw9EZYhFYK_wYc1Y-D6e5RvGOsvSK-HnRl`
+  (in `google-scripts/.clasp.json`). **Standalone, not bound to the
+  Sheet** - it opens the spreadsheet by id from the `SPREADSHEET_ID`
+  script property. The original bound project
+  (`1_tN8iCH5OUV9dnezTXuR4fIE0Mn_fnL0aMnwffrCbx_BXfXjEu-bHePT`) is dead: it hit Apps
+  Script's hard limit of 200 versions, which cannot be deleted, and a
+  spreadsheet can only ever have one bound script - so the replacement had
+  to live outside it. That project is still deployed at @200 and can still
+  serve, but nothing new can ever ship from it.
+- Script properties the backend needs (Project Settings, never in source):
+  `SPREADSHEET_ID`, plus `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` for the
+  mirror.
+- Supabase project: `wbynnectawbtyvdjfqcd`
+  (`https://wbynnectawbtyvdjfqcd.supabase.co`) - see `supabase/` and the
+  Supabase mirror section below.
+- Apps Script Deployment ID: `AKfycbwZi7YeMBl-jjsVaiVaWDamVsx7q3CXnEsRKHVzOvMO6dexljAwjfdJa5AZ9qL-PeBu`
 - Web app URL (baked into `frontend/app.js` as `API_URL`):
-  `https://script.google.com/macros/s/AKfycbycgBW8zp3sF20h90ZqpxLFGQ-kBO2Z6yKCkjcnnXbXMcr1ZI2HSqa3onKmu-n70n6Qcw/exec`
+  `https://script.google.com/macros/s/AKfycbwZi7YeMBl-jjsVaiVaWDamVsx7q3CXnEsRKHVzOvMO6dexljAwjfdJa5AZ9qL-PeBu/exec`
 - GitHub repo: `https://github.com/shahlivingo-glitch/Production`
 - Vercel production URL: `https://production-six-ruby.vercel.app`
 
@@ -53,7 +66,7 @@ run from `google-scripts/`:
 
 ```
 npx clasp push --force
-npx clasp deploy -i "AKfycbycgBW8zp3sF20h90ZqpxLFGQ-kBO2Z6yKCkjcnnXbXMcr1ZI2HSqa3onKmu-n70n6Qcw" -d "description"
+npx clasp deploy -i "AKfycbwZi7YeMBl-jjsVaiVaWDamVsx7q3CXnEsRKHVzOvMO6dexljAwjfdJa5AZ9qL-PeBu" -d "description"
 ```
 
 The working pattern for every change this whole rebuild: push + deploy,

@@ -1,4 +1,4 @@
-var API_URL = 'https://script.google.com/macros/s/AKfycbycgBW8zp3sF20h90ZqpxLFGQ-kBO2Z6yKCkjcnnXbXMcr1ZI2HSqa3onKmu-n70n6Qcw/exec';
+var API_URL = 'https://script.google.com/macros/s/AKfycbwZi7YeMBl-jjsVaiVaWDamVsx7q3CXnEsRKHVzOvMO6dexljAwjfdJa5AZ9qL-PeBu/exec';
 var SESSION_STORAGE_KEY = 'almirahSession';
 
 function el(id) { return document.getElementById(id); }
