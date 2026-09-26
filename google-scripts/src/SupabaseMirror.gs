@@ -14,11 +14,39 @@
 
 var SUPABASE_MIRROR_ENABLED = true;
 
-// AppUsers/AppSessions are deliberately NOT mirrored. Auth now lives in
-// Supabase Auth + profiles (keyed by auth.users.id), so copying the old
-// Sheet rows over would fight that, and AppSessions is session tokens -
-// there is no reason for those to leave the Sheet.
+// AppUsers/AppSessions ARE mirrored, which was not the original intent.
+// The reason: the app signs in against Apps Script, not Supabase Auth, so
+// for Postgres to serve a read it has to be able to resolve the caller's
+// session token locally - otherwise every "fast" read would still need a
+// round trip back here to ask who is calling, which is the exact latency
+// being removed. Both tables are deny-all under RLS and reachable only
+// through the SECURITY DEFINER api_* functions (see read_api.sql).
+// Supabase Auth + profiles remains the destination; this is the bridge.
 var SUPABASE_TABLES = {
+  AppUsers: {
+    table: 'app_users',
+    pk: ['user_id'],
+    cols: {
+      UserId: ['user_id', 'text'],
+      Username: ['username', 'text'],
+      PasswordHash: ['password_hash', 'text'],
+      PasswordSalt: ['password_salt', 'text'],
+      Role: ['role', 'text'],
+      Permissions: ['permissions', 'json'],
+      CreatedAt: ['created_at', 'ts'],
+      CreatedBy: ['created_by', 'text']
+    }
+  },
+  AppSessions: {
+    table: 'app_sessions',
+    pk: ['token'],
+    cols: {
+      Token: ['token', 'text'],
+      UserId: ['user_id', 'text'],
+      CreatedAt: ['created_at', 'ts'],
+      ExpiresAt: ['expires_at', 'ts']
+    }
+  },
   Models: {
     table: 'models',
     pk: ['model_name'],

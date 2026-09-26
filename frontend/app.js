@@ -220,7 +220,61 @@ function fetchJsonWithRetry(url, delays) {
   });
 }
 
-function apiGet(action, params) {
+// --- Supabase fast reads ---------------------------------------------------
+// Apps Script costs 4-17s per call no matter how little work it does: the
+// cold dispatch and the redirect through googleusercontent.com dominate.
+// The same data out of Postgres is ~0.1-0.4s.
+//
+// Only reads listed here are served this way, and only ones whose RPC
+// returns the byte-identical shape the page already expects - so nothing
+// downstream branches on where the data came from. Everything else, and
+// every write, still goes to Apps Script, which keeps Supabase current by
+// mirroring each write (see SupabaseMirror.gs).
+//
+// The anon key is public by design; the tables are deny-all under RLS and
+// only the SECURITY DEFINER api_* functions can read them, each checking
+// the caller's own session token and menu grant first.
+var SUPABASE_URL = 'https://wbynnectawbtyvdjfqcd.supabase.co';
+var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndieW5uZWN0YXdidHl2ZGpmcWNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzODg0NjYsImV4cCI6MjEwNTk2NDQ2Nn0.KlBhm8Q1blK8w2tdo1bkuPKa9CmoOJ60oBjdseQ8-R8';
+
+// action -> { fn, args(params) }. Absent from this map = goes to Apps Script.
+var SUPABASE_READS = {
+  sheetStockBundle: {
+    fn: 'api_sheet_stock_bundle',
+    args: function (p) { return { p_limit: Number((p && p.limit) || 50) }; }
+  },
+  extraPartInventory: { fn: 'api_extra_part_inventory', args: function () { return {}; } },
+  cuttingConfigModels: { fn: 'api_cutting_config_models', args: function () { return {}; } },
+  dashboardSummary: { fn: 'api_dashboard_summary', args: function () { return {}; } },
+  orders: { fn: 'api_orders', args: function () { return {}; } }
+};
+
+function supabaseRead(action, params) {
+  var spec = SUPABASE_READS[action];
+  var token = getToken();
+  if (!spec || !token) return Promise.reject(new Error('no fast path'));
+
+  var body = spec.args(params || {});
+  body.p_token = token;
+
+  return fetch(SUPABASE_URL + '/rest/v1/rpc/' + spec.fn, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  }).then(function (res) {
+    if (!res.ok) throw new Error('supabase ' + res.status);
+    return res.json();
+  }).then(function (data) {
+    if (data === null || data === undefined) throw new Error('supabase empty');
+    return { ok: true, data: data };
+  });
+}
+
+function appsScriptGet(action, params) {
   var url = new URL(API_URL);
   url.searchParams.set('action', action);
   var token = getToken();
@@ -230,6 +284,19 @@ function apiGet(action, params) {
   });
   return fetchJsonWithRetry(url.toString(), [500, 1000, 1800]).then(function (result) {
     return isNotSignedIn(result) ? redirectToLogin() : result;
+  });
+}
+
+// Tries Postgres first for the mapped reads and falls back to Apps Script on
+// ANY failure - including the read API simply not being installed yet. That
+// fallback is what makes turning this on safe: the worst case is the page
+// being as slow as it is today, never broken.
+function apiGet(action, params) {
+  if (!SUPABASE_READS[action] || !getToken()) {
+    return appsScriptGet(action, params);
+  }
+  return supabaseRead(action, params).catch(function () {
+    return appsScriptGet(action, params);
   });
 }
 
