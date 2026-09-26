@@ -34,7 +34,7 @@ var SUPABASE_TABLES = {
     cols: {
       ModelName: ['model_name', 'text'],
       PlanName: ['plan_name', 'text'],
-      Sheets: ['sheets', 'json'],
+      Sheets: ['sheets', 'json', '[]'],
       UpdatedAt: ['updated_at', 'ts'],
       PlanType: ['plan_type', 'text'],
       BaseQty: ['base_qty', 'int']
@@ -48,7 +48,7 @@ var SUPABASE_TABLES = {
       ModelName: ['model_name', 'text'],
       VersionNumber: ['version_number', 'int'],
       SourcePlanName: ['source_plan_name', 'text'],
-      Sheets: ['sheets', 'json'],
+      Sheets: ['sheets', 'json', '[]'],
       CreatedAt: ['created_at', 'ts'],
       Note: ['note', 'text']
     }
@@ -66,8 +66,8 @@ var SUPABASE_TABLES = {
       DeliveryDeadline: ['delivery_deadline', 'text'],
       PartyName: ['party_name', 'text'],
       PlanVersionId: ['plan_version_id', 'textOrNull'],
-      SheetCompletion: ['sheet_completion', 'json'],
-      BendingCompletion: ['bending_completion', 'json'],
+      SheetCompletion: ['sheet_completion', 'json', '[]'],
+      BendingCompletion: ['bending_completion', 'json', '[]'],
       TotalSheetsRequired: ['total_sheets_required', 'int'],
       CuttingStatus: ['cutting_status', 'text'],
       BendingStatus: ['bending_status', 'text'],
@@ -165,13 +165,22 @@ function supabaseConfig() {
 // holds them as TEXT, and sending that text straight through would store a
 // JSON *string* rather than an object, so every jsonb query against it
 // would quietly return nothing.
-function supabaseCoerce(value, kind) {
+// jsonDefault is '{}' unless the column is an array ('[]'). It is NOT
+// optional: every jsonb column in the schema is NOT NULL, and cells for
+// columns added later than a row are empty strings - PO-0001 predates
+// PlanEntryInventoryMoves and the *CompletionMeta maps, so returning null
+// there fails the whole upsert with 23502 and silently stops that row ever
+// mirroring again. Shape matters too: an array column defaulted to {} would
+// break every positional index built on it.
+function supabaseCoerce(value, kind, jsonDefault) {
   if (kind === 'json') {
-    if (value === '' || value === null || value === undefined) return null;
+    var fallback = JSON.parse(jsonDefault || '{}');
+    if (value === '' || value === null || value === undefined) return fallback;
     try {
-      return JSON.parse(String(value));
+      var parsed = JSON.parse(String(value));
+      return (parsed === null || parsed === undefined) ? fallback : parsed;
     } catch (err) {
-      return null;
+      return fallback;
     }
   }
   if (kind === 'ts') {
@@ -195,7 +204,7 @@ function supabaseRowFromSheetRow(tabName, rowObj) {
   var out = {};
   Object.keys(spec.cols).forEach(function (header) {
     var col = spec.cols[header];
-    out[col[0]] = supabaseCoerce(rowObj[header], col[1]);
+    out[col[0]] = supabaseCoerce(rowObj[header], col[1], col[2]);
   });
   return out;
 }
