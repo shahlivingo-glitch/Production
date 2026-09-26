@@ -181,7 +181,13 @@ var GET_ACTIONS = {
   runSetup: function (p) {
     setupSpreadsheet();
     return { ran: true };
-  }
+  },
+  // Supabase mirror health + repair. Admin-only (absent from ACTION_MENUS,
+  // so they fall through to "signed in", and both are harmless reads /
+  // idempotent upserts).
+  supabaseMirrorStatus: function (p) { return supabaseMirrorStatus(); },
+  supabaseBackfill: function (p) { return supabaseBackfillAll(); },
+  supabaseClearErrors: function (p) { return supabaseClearErrors(); }
 };
 
 var POST_ACTIONS = {

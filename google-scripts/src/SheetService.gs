@@ -214,6 +214,12 @@ function appendRow(tabName, rowObj) {
   });
   sheet.appendRow(row);
   invalidateSheetCache(tabName);
+  // Mirror from the row array actually written, not from rowObj: appendRow
+  // fills missing columns with '', and mirroring rowObj alone would leave
+  // those columns absent in Supabase rather than empty.
+  var mirrored = {};
+  headers.forEach(function (h, i) { mirrored[h] = row[i]; });
+  supabasePush(tabName, [mirrored]);
   return rowObj;
 }
 
@@ -229,6 +235,10 @@ function writeRowUpdates(tabName, rowIndex, updates) {
     sheet.getRange(rowIndex, idxByHeader[key]).setValue(updates[key]);
   });
   invalidateSheetCache(tabName);
+  // Re-reads the row so the mirror carries every column - `updates` only
+  // holds the ones that changed, and upserting from those would blank the
+  // rest in Supabase.
+  supabaseMirrorRowIndex(tabName, rowIndex);
 }
 
 function updateRowById(tabName, idColumn, idValue, updates) {
@@ -267,5 +277,8 @@ function deleteRowsWhere(tabName, matchFn) {
     sheet.deleteRow(r._rowIndex);
   });
   invalidateSheetCache(tabName);
+  // Captured before deletion above, so the natural keys are still available
+  // to delete the matching Supabase rows.
+  supabaseDelete(tabName, rows);
   return rows.length;
 }
