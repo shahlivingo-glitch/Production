@@ -312,13 +312,16 @@ $$;
 -- ---------------------------------------------------------------------
 -- updated_at triggers
 -- ---------------------------------------------------------------------
+-- ONLY profiles. The mirrored tables deliberately have no updated_at
+-- trigger: their rows change only via the Sheet mirror, which carries the
+-- Sheet's own authoritative UpdatedAt, and a trigger would overwrite it
+-- with "when the mirror last ran" - wrong in the UI, and fatal to the
+-- newer-wins sync comparison against last_edited_in_sheet. When Supabase
+-- becomes the source of truth the write RPCs set updated_at explicitly.
 do $$
 declare t text;
 begin
-  foreach t in array array[
-    'models', 'cutting_plans', 'orders',
-    'extra_part_inventory', 'sheet_stock', 'profiles'
-  ] loop
+  foreach t in array array['profiles'] loop
     execute format('drop trigger if exists %I_set_updated_at on %I', t, t);
     execute format(
       'create trigger %I_set_updated_at before update on %I
