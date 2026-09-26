@@ -244,7 +244,10 @@ var SUPABASE_READS = {
     args: function (p) { return { p_limit: Number((p && p.limit) || 50) }; }
   },
   extraPartInventory: { fn: 'api_extra_part_inventory', args: function () { return {}; } },
-  cuttingConfigModels: { fn: 'api_cutting_config_models', args: function () { return {}; } },
+  // cuttingConfigModels is NOT here: listCuttingConfigModels returns a
+  // plain array of name strings, and the first RPC returned objects, so
+  // Cutting Configuration rendered '[object Object]'. Re-enable only
+  // once the corrected function is installed and its shape verified.
   dashboardSummary: { fn: 'api_dashboard_summary', args: function () { return {}; } },
   orders: { fn: 'api_orders', args: function () { return {}; } }
 };
