@@ -25,8 +25,31 @@ var TAB_HEADERS = {
   AppSessions: ['Token', 'UserId', 'CreatedAt', 'ExpiresAt']
 };
 
+// The project is STANDALONE, not bound to the spreadsheet, so there is no
+// "active" spreadsheet to pick up implicitly - it has to be opened by id.
+//
+// Standalone because the original bound project hit Apps Script's hard
+// ceiling of 200 versions (they cannot be deleted), and a spreadsheet can
+// only ever have one bound script - so a replacement had to live outside
+// it. The id is read from Script Properties rather than hardcoded: it is
+// the address of the entire business dataset, and this repo is on GitHub.
+//
+// Cached per execution; opening a spreadsheet is a real round trip and
+// getSheet() is called many times per request.
+var _spreadsheetHandle = null;
+
+function getSpreadsheet() {
+  if (_spreadsheetHandle) return _spreadsheetHandle;
+  var id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!id) {
+    throw new Error('SPREADSHEET_ID script property is not set — see Project Settings.');
+  }
+  _spreadsheetHandle = SpreadsheetApp.openById(id);
+  return _spreadsheetHandle;
+}
+
 function getSheet(tabName) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet();
   var sheet = ss.getSheetByName(tabName);
   if (!sheet) {
     throw new Error('Unknown tab: ' + tabName);
