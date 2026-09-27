@@ -966,6 +966,22 @@ a { color: var(--color-accent); }
   letter-spacing: 0.02em;
 }
 
+/* Search box in the "Pull from Extra Inventory" picker. The list is short
+   today but grows with every distinct part+size banked, which is exactly
+   the kind of list that quietly becomes unusable. */
+.pull-inventory-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: var(--space-3);
+}
+
+/* The picker itself scrolls once the list outgrows the viewport, rather
+   than pushing Close off the bottom of the screen. */
+#pull-inventory-list {
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
 .cut-pending-inline {
   color: var(--color-destructive);
   font-weight: 600;

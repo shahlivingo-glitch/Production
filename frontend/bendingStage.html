@@ -72,7 +72,10 @@
       <h3>Pull from Extra Inventory</h3>
       <div class="section-hint">Surplus stock already sitting for this model - pull some into this PO's bending list even before Cutting finishes that part's own sheet.</div>
       <div id="pull-inventory-empty" class="empty-state" style="display:none;">Nothing in Extra Part Inventory for this model yet.</div>
+      <input type="search" id="pull-inventory-search" class="pull-inventory-search"
+             placeholder="Search by part name or size…" autocomplete="off" style="display:none;">
       <div id="pull-inventory-list"></div>
+      <div id="pull-inventory-nomatch" class="empty-state" style="display:none;">No part matches that search.</div>
       <div class="modal-actions">
         <button class="btn-secondary" id="pull-inventory-cancel-btn">Close</button>
       </div>

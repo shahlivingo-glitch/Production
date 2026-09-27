@@ -8,6 +8,19 @@ function initBendingStage() {
   el('pull-inventory-cancel-btn').addEventListener('click', function () {
     el('pull-inventory-overlay').style.display = 'none';
   });
+  el('pull-inventory-search').addEventListener('input', renderPullInventoryList);
+  // Escape clears the search first and only closes the picker once it is
+  // already empty, so a stray Escape mid-search doesn't lose your place.
+  el('pull-inventory-search').addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (e.target.value) {
+      e.target.value = '';
+      renderPullInventoryList();
+      e.stopPropagation();
+    } else {
+      el('pull-inventory-overlay').style.display = 'none';
+    }
+  });
   if (!canEdit('bendingStage')) {
     el('mark-all-complete-btn').style.display = 'none';
     el('pull-inventory-btn').style.display = 'none';
@@ -660,21 +673,50 @@ function toggleExtraBendingEntry(extraKey, completed, useFromInventory) {
 // this PO's bending list - useful when Cutting hasn't finished (or even
 // started) that part's own sheet yet, but stock already exists from a prior
 // order's surplus.
-function openPullInventoryModal() {
+// Matches on part name OR size, both squashed to lowercase with spaces
+// removed - sizes get typed inconsistently in this data ("510X890",
+// "510x890", "510 x 890"), so a literal match would miss the obvious.
+// Every whitespace-separated term must match somewhere, which makes
+// "shelf 510" work as a narrowing search rather than an either/or.
+function pullInventoryMatches(row, query) {
+  var squash = function (v) { return String(v || '').toLowerCase().replace(/\s+/g, ''); };
+  var haystack = squash(row.partName) + ' ' + squash(row.size) + ' ' + squash(row.modelName);
+  var terms = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  return terms.every(function (t) { return haystack.indexOf(squash(t)) !== -1; });
+}
+
+function renderPullInventoryList() {
   var list = el('pull-inventory-list');
-  var empty = el('pull-inventory-empty');
+  var noMatch = el('pull-inventory-nomatch');
+  var search = el('pull-inventory-search');
   list.innerHTML = '';
 
   var avail = (currentBendingQueue && currentBendingQueue.availableInventory) || [];
-  if (avail.length === 0) {
-    empty.style.display = 'block';
-  } else {
-    empty.style.display = 'none';
-    avail.forEach(function (row) {
-      list.appendChild(buildPullInventoryRow(row));
-    });
-  }
+  var shown = avail.filter(function (row) {
+    return pullInventoryMatches(row, search ? search.value : '');
+  });
+
+  shown.forEach(function (row) { list.appendChild(buildPullInventoryRow(row)); });
+  // Only ever shown when the search itself emptied the list - "nothing in
+  // inventory at all" is a different message and stays separate.
+  noMatch.style.display = (avail.length && !shown.length) ? 'block' : 'none';
+}
+
+function openPullInventoryModal() {
+  var empty = el('pull-inventory-empty');
+  var search = el('pull-inventory-search');
+  var avail = (currentBendingQueue && currentBendingQueue.availableInventory) || [];
+
+  // Reset between openings, otherwise a previous search silently hides rows
+  // the next time the picker is opened.
+  if (search) search.value = '';
+  empty.style.display = avail.length ? 'none' : 'block';
+  if (search) search.style.display = avail.length ? 'block' : 'none';
+
+  renderPullInventoryList();
   el('pull-inventory-overlay').style.display = 'flex';
+  if (search && avail.length) search.focus();
 }
 
 function buildPullInventoryRow(row) {
