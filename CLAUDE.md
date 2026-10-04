@@ -106,6 +106,14 @@ after `runSetup`, not just that the API returns 200.
   versioning of its own, it just derives from Cutting's data. It also
   moves stock both ways against the Leftover Ledger, and calls out what
   the order is still short of — see Bending ↔ Leftover Ledger below.
+- **`frontend/assembly.html` — Assembly Stage.** The last stage.
+  Dashboard (POs whose `BendingStatus` is `complete` and that are not yet
+  fully assembled) → per-PO screen with one number on it: how many
+  almirahs are built. No per-part detail at all — by the time a PO gets
+  here every part is bent, so what gets counted is whole cabinets.
+  "Assemble Done" fills the whole remainder in one click; the
+  "Assembled now" box records a partial batch and is **additive** (type
+  what was just built, not a running total). See Assembly Stage below.
 - **`frontend/extraPartInventory.html` — Extra Part Inventory.**
   Read-only table, auto-tallied running stock of extra/surplus parts
   logged from Cutting Stage. Also called the "Leftover Ledger" — it now
@@ -133,7 +141,7 @@ after `runSetup`, not just that the API returns 200.
   server-side). Create users, set each one's per-menu View/Edit/None,
   reset a password, delete a non-admin user.
 
-All nine pages link to each other via a shared **left sidebar**, built
+All ten pages link to each other via a shared **left sidebar**, built
 per-user by `renderSideNav()` in `app.js` — see Authentication below.
 (It was a top nav originally; the function was renamed with the layout,
 so old references to `renderTopNav` are stale.) On narrow screens the
@@ -142,7 +150,7 @@ sidebar collapses behind the `.mobile-nav-toggle` hamburger.
 ## Authentication & Permissions
 
 Every page requires being signed in; beyond that, a non-admin user's
-access is **per-menu** (one of the 6 real pages above, not Dashboard or
+access is **per-menu** (one of the 7 real pages above, not Dashboard or
 User Management) at one of three levels: **None**, **View**, or **Edit**.
 Admins bypass all of this — full view+edit everywhere, plus User
 Management.
@@ -163,7 +171,7 @@ Management.
   `createInitialAdmin` — you can't have a token before any of these
   succeed) plus `runSetup` (schema-only, no data exposed, and it has to
   work before `AppUsers` even exists). Everything else needs a valid
-  session; most actions additionally belong to one of the 6 menus via
+  session; most actions additionally belong to one of the 7 menus via
   the `ACTION_MENUS` table and need `'view'` (reads) or `'edit'`
   (writes) on that specific menu. A handful of cross-page reference
   reads (`cuttingConfigModels`, `cuttingConfigPlans`, `cuttingConfigPlan`,
@@ -307,6 +315,16 @@ animation library added; stays framework-free like the rest of the app.
   themselves are bare booleans, so without these the PO History report
   could say nothing about timing; cleared again on un-complete so they
   never describe a completion that was undone).
+  BendingPartial (JSON — partial bending progress, namespaced in one map:
+  a plain index for a plan entry, `"extra:<extraKey>"` for an extra).
+  BendingBatchQty (how many almirahs the current bending batch covers —
+  **display-only**: it rescales the quantity each part card shows and
+  records no bending). ForceBentParts (JSON
+  `{ "<partName>": {qty, at, by} }` — pieces an operator declared bent
+  without them having been cut here) and AllowForceBend (per-PO,
+  admin-controlled gate for that override; blank means allowed).
+  AssembledQty / AssemblyStatus / AssemblyMeta — see Assembly Stage
+  below.
 - `PlanVersions`: VersionId, ModelName, VersionNumber (per-model
   counter, 1-based), SourcePlanName, Sheets (same shape as
   CuttingPlans.Sheets), CreatedAt, Note. Only ever created by an
@@ -563,6 +581,56 @@ Lesson: after any `TAB_HEADERS` change, don't trust the *first*
 post-deploy `runSetup` — verify the header row content itself (e.g. via
 a throwaway raw-row-dump action) if a new field seems to silently vanish,
 rather than assuming the write logic is wrong.
+
+### Assembly Stage (`Assembly.gs` → `assembly.html`)
+
+The one stage with no per-part anything. Three `Orders` columns carry it:
+
+- `AssembledQty` — how many finished almirahs exist. The only number
+  that matters here.
+- `AssemblyStatus` — `pending` / `complete`, **derived**, same as
+  CuttingStatus and BendingStatus: `assemblyStatusFor()` recomputes it
+  from `AssembledQty >= Qty` on every read, so the stored value is a
+  mirror for Supabase and reports, never the thing that is trusted. A
+  `Qty` of 0 stays `pending` rather than reading as instantly complete.
+- `AssemblyMeta` — `[{qty, at, by}]`, one entry per time somebody
+  recorded assembly. An **array**, not a keyed map like the other
+  `*Meta` columns, because there is nothing positional to key it to: a
+  PO built over several days is just a sequence of sessions.
+
+The queue gate is `BendingStatus === 'complete'` and nothing else — the
+app's own definition of "all parts bent", so Assembly can never disagree
+with Bending about whether a PO is ready. Note that bending can read
+complete while parts are still short (a force-bend, or a part no sheet
+cuts): `getAssemblyForOrder` therefore pulls `stillToCut` from
+`getBendingQueueForOrder` and shows it as a red "Parts Short" block. It
+is **surfaced, not enforced** — the assembler is the person who hits it
+physically, and blocking them on a number the system cannot see would be
+worse than telling them. That read is wrapped in try/catch so a bending
+failure can't take the assembly screen down with it.
+
+Writes:
+
+- `addAssemblyProgress({poNumber, qty})` — **additive**: `qty` is what
+  was just built, not a total. Caps at the order quantity rather than
+  rejecting an overshoot (typing 10 when 8 remain means "that's the
+  lot"), and the log records the capped amount, not what was typed.
+  Reaching `Qty` flips the status to complete, which is what drops the
+  PO off the dashboard.
+- `markAssemblyComplete({poNumber})` — the "Assemble Done" button: fills
+  the whole remainder in one write.
+- `resetAssemblyProgress({poNumber})` — **admin-only** (`requireAdmin`
+  inside, and deliberately absent from `ACTION_MENUS` so an
+  `assembly:edit` grant can't reach it). Assembly completion is what
+  takes a PO off the floor, so a mistyped quantity needs a way back that
+  isn't editing the Sheet by hand.
+
+Both write paths refuse a PO whose bending isn't finished, and refuse
+one that is already fully assembled, rather than silently no-op'ing.
+
+`assembly` is a seventh `MENU_KEYS` entry, so **existing non-admin users
+default to `none` on it** and see no Assembly link until an admin grants
+it in User Management (admins bypass, as everywhere).
 
 ### PO History (`PoHistory.gs` → `poHistory.html`)
 
@@ -901,9 +969,12 @@ data. Conventions that keep that safe:
   was asked for) and no plan editing of its own. It is **no longer purely
   derived**, though: it writes `PlanEntryInventoryMoves`, creates
   `inventory-pull` rows in `CuttingExtras`, and moves ledger stock both
-  ways — it just doesn't touch the *plan*. If a future stage (Assembly,
-  Fitting, ...)
-  needs the same "unlocked by the previous stage" pattern, Bending.gs's
-  shape (flatten the source array once, gate completion on the prior
-  stage's completion array, derive status the same walked-index way) is
-  the template to copy, not Cutting's original per-sheet code.
+  ways — it just doesn't touch the *plan*. If a future stage (Fitting,
+  Dispatch, ...) needs the same "unlocked by the previous stage" pattern
+  at **part** granularity, Bending.gs's shape (flatten the source array
+  once, gate completion on the prior stage's completion array, derive
+  status the same walked-index way) is the template to copy, not
+  Cutting's original per-sheet code. A stage that counts whole units
+  instead — as Assembly does — wants Assembly.gs's shape instead: one
+  number plus an append-only `[{qty, at, by}]` log, no positional arrays
+  at all.

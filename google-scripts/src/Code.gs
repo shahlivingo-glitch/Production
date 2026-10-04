@@ -54,7 +54,7 @@ function getSheetStockBundle(limit) {
 // Every action requires a valid session token EXCEPT the 3 below (you can't
 // have a token before you've logged in, or before the very first admin
 // account exists). Beyond "is signed in", most actions ALSO belong to one of
-// the 6 page menus (Auth.gs's MENU_KEYS) and need 'view' (reads) or 'edit'
+// the 7 page menus (Auth.gs's MENU_KEYS) and need 'view' (reads) or 'edit'
 // (writes) on that menu specifically - admins bypass this part entirely.
 // A few reference reads used across multiple pages' own workflows (e.g. the
 // model dropdown on the PO form) are left at "just signed in", not tied to
@@ -111,6 +111,12 @@ var ACTION_MENUS = {
   moveEntryQtyToInventory: ['bendingStage', 'edit'],
   pullFromExtraInventory: ['bendingStage', 'edit'],
   markAllBendingComplete: ['bendingStage', 'edit'],
+
+  // Assembly Stage
+  pendingAssemblyOrders: ['assembly', 'view'],
+  assemblyForOrder: ['assembly', 'view'],
+  addAssemblyProgress: ['assembly', 'edit'],
+  markAssemblyComplete: ['assembly', 'edit'],
 
   // Extra Part Inventory (view-only page - no edit actions exist for it)
   extraPartInventory: ['extraInventory', 'view'],
@@ -175,6 +181,8 @@ var GET_ACTIONS = {
   knownExtraParts: function (p) { return listKnownExtraParts(); },
   pendingBendingOrders: function (p) { return listPendingBendingOrders(); },
   bendingQueueForOrder: function (p) { return getBendingQueueForOrder(p.poNumber); },
+  pendingAssemblyOrders: function (p) { return listPendingAssemblyOrders(); },
+  assemblyForOrder: function (p) { return getAssemblyForOrder(p.poNumber); },
   sheetStock: function (p) { return listSheetStock(); },
   sheetStockLog: function (p) { return listSheetStockLog(p.limit); },
   sheetStockBundle: function (p) { return getSheetStockBundle(p.limit); },
@@ -229,6 +237,11 @@ var POST_ACTIONS = {
   moveEntryQtyToInventory: function (b) { return moveEntryQtyToInventory(b); },
   pullFromExtraInventory: function (b) { return pullFromExtraInventory(b); },
   markAllBendingComplete: function (b) { return markAllBendingComplete(b); },
+  addAssemblyProgress: function (b) { return addAssemblyProgress(b); },
+  markAssemblyComplete: function (b) { return markAssemblyComplete(b); },
+  // admin-only (requireAdmin inside), kept out of ACTION_MENUS so an
+  // assembly:edit grant cannot undo a completed PO
+  resetAssemblyProgress: function (b) { return resetAssemblyProgress(b); },
   setMultiYieldDecision: function (b) { return setMultiYieldDecision(b); },
   receiveSheetStock: function (b) { return receiveSheetStock(b); },
   adjustSheetStock: function (b) { return adjustSheetStock(b); }

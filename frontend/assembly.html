@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assembly Stage</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="icon" href="favicon.ico">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="has-sidebar">
+  <div class="mobile-topbar">
+    <button class="mobile-nav-toggle" id="mobile-nav-toggle" aria-label="Open menu">&#9776;</button>
+    <h1>Assembly Stage</h1>
+  </div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">Almirah Tracker</div>
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    <div class="sidebar-footer" id="sidebar-footer"></div>
+  </aside>
+
+  <div id="dashboard-view">
+    <div class="cs-dashboard">
+      <h2 id="pending-count-heading">Ready to Assemble</h2>
+      <div class="section-hint">A PO appears here once every part of it is bent. Assemble the almirahs, then record how many are built — all of them at once, or a few at a time.</div>
+      <div id="pending-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading Ready to Assemble&hellip;</p>
+      </div>
+      <div id="pending-error" class="alert-banner" style="display:none;"></div>
+      <div id="pending-po-list"></div>
+    </div>
+  </div>
+
+  <div id="detail-view" style="display:none;">
+    <div class="save-bar">
+      <button class="btn-secondary" id="back-to-dashboard-btn">&larr; Back to Dashboard</button>
+      <span id="detail-po-title" style="font-weight:700;"></span>
+      <span id="detail-status-pill"></span>
+      <span style="flex:1;"></span>
+      <button class="btn-secondary" id="reset-assembly-btn" style="display:none;">Reset Assembled Count</button>
+      <button class="btn-primary" id="assemble-done-btn">Assemble Done</button>
+    </div>
+
+    <div class="cs-detail">
+      <div id="detail-loading" class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <p>Loading PO&hellip;</p>
+      </div>
+      <div id="detail-error" class="alert-banner" style="display:none;"></div>
+      <div id="detail-content" style="display:none;">
+        <div class="cs-po-summary" id="po-summary"></div>
+        <div id="assembly-progress"></div>
+        <div id="assembly-partial-bar" class="bend-units-bar" style="display:none;"></div>
+        <div id="assembly-shortfall" style="display:none;"></div>
+        <div id="assembly-log-section" style="display:none;">
+          <div class="section-title">Assembly Log</div>
+          <div id="assembly-log-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="assembly.js"></script>
+</body>
+</html>

@@ -142,6 +142,25 @@ create table if not exists orders (
   -- the source of truth for "done"; this is progress toward it.
   bending_partial               jsonb       not null default '{}'::jsonb,
 
+  -- How many almirahs the current bending batch covers. Display-only: it
+  -- rescales the quantity each part card shows and records no bending.
+  bending_batch_qty             integer     not null default 0,
+
+  -- Pieces an operator declared bent without them having been cut here:
+  -- { "<partName>": { "qty": n, "at": iso, "by": name } }. The who/when is
+  -- kept because this overrides what the system can actually see.
+  force_bent_parts              jsonb       not null default '{}'::jsonb,
+  -- Per-PO gate for that override, admin-controlled. Text to match how the
+  -- Sheet stores it; blank means allowed.
+  allow_force_bend              text        not null default '',
+
+  -- Assembly: whole almirahs, no per-part detail - by the time a PO gets
+  -- here every part is bent. assembly_meta is [{ qty, at, by }], one entry
+  -- per recorded session, so a PO built over several days reads back.
+  assembled_qty                 integer     not null default 0,
+  assembly_status               text        not null default 'pending',
+  assembly_meta                 jsonb       not null default '[]'::jsonb,
+
   updated_at                    timestamptz not null default now(),
   last_edited_in_sheet          timestamptz
 );

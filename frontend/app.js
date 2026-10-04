@@ -40,9 +40,9 @@ function clearSession() {
 }
 
 // menuKey is one of Auth.gs's MENU_KEYS: cuttingConfig, orders, cuttingStage,
-// bendingStage, extraInventory, sheetStock. Admins' stored permissions are
-// already all-'edit' (see userRowToObject in Auth.gs), so these need no
-// separate "or is admin" branch.
+// bendingStage, assembly, extraInventory, sheetStock. Admins' stored
+// permissions are already all-'edit' (see userRowToObject in Auth.gs), so
+// these need no separate "or is admin" branch.
 function canView(menuKey) {
   var user = getCurrentUser();
   if (!user) return false;
@@ -115,7 +115,7 @@ function doLogout() {
 }
 
 // Dashboard is visible to any signed-in user regardless of menu grants;
-// the 6 real pages need at least 'view' on their own menu; User Management
+// the 7 real pages need at least 'view' on their own menu; User Management
 // is admin-only, not a grantable menu.
 var NAV_PAGES = [
   { key: 'dashboard', label: 'Dashboard', href: 'dashboard.html', menu: null },
@@ -123,6 +123,7 @@ var NAV_PAGES = [
   { key: 'orders', label: 'Production Order Form', href: 'orders.html', menu: 'orders' },
   { key: 'cuttingStage', label: 'Cutting Stage', href: 'cuttingStage.html', menu: 'cuttingStage' },
   { key: 'bendingStage', label: 'Bending Stage', href: 'bendingStage.html', menu: 'bendingStage' },
+  { key: 'assembly', label: 'Assembly Stage', href: 'assembly.html', menu: 'assembly' },
   { key: 'extraInventory', label: 'Extra Part Inventory', href: 'extraPartInventory.html', menu: 'extraInventory' },
   { key: 'sheetStock', label: 'Raw Sheet Stock', href: 'sheetStock.html', menu: 'sheetStock' }
 ];

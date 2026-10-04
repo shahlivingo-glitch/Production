@@ -22,4 +22,21 @@ alter table orders
 alter table orders
   add column if not exists allow_force_bend text not null default '';
 
-select 'bending columns added' as result;
+-- =====================================================================
+-- Assembly Stage. One number per PO plus its own audit trail - assembly
+-- has no per-part detail: by the time a PO reaches it every part is bent,
+-- and what gets counted is whole almirahs.
+-- =====================================================================
+
+alter table orders
+  add column if not exists assembled_qty integer not null default 0;
+
+alter table orders
+  add column if not exists assembly_status text not null default 'pending';
+
+-- [{ qty, at, by }] - one entry per time somebody recorded assembly, so a
+-- PO built over several days can be read back session by session.
+alter table orders
+  add column if not exists assembly_meta jsonb not null default '[]'::jsonb;
+
+select 'bending + assembly columns added' as result;

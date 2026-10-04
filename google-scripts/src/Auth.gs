@@ -17,7 +17,7 @@
 // bypass all permission checks (requirePermission / checkAccess in Code.gs
 // short-circuit for role === 'admin').
 
-var MENU_KEYS = ['cuttingConfig', 'orders', 'cuttingStage', 'bendingStage', 'extraInventory', 'sheetStock'];
+var MENU_KEYS = ['cuttingConfig', 'orders', 'cuttingStage', 'bendingStage', 'assembly', 'extraInventory', 'sheetStock'];
 var SESSION_DAYS = 30;
 
 function sha256Hex(text) {

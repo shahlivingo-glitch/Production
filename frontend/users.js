@@ -1,6 +1,6 @@
 var allUsers = [];
 
-// The 6 grantable menus, reusing NAV_PAGES (app.js) so labels never drift
+// The 7 grantable menus, reusing NAV_PAGES (app.js) so labels never drift
 // out of sync with the actual nav.
 var PERMISSION_MENUS = NAV_PAGES.filter(function (p) { return p.menu; }).map(function (p) {
   return { key: p.menu, label: p.label };

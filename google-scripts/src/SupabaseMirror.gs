@@ -115,7 +115,10 @@ var SUPABASE_TABLES = {
       BendingPartial: ['bending_partial', 'json'],
       BendingBatchQty: ['bending_batch_qty', 'int'],
       ForceBentParts: ['force_bent_parts', 'json'],
-      AllowForceBend: ['allow_force_bend', 'text']
+      AllowForceBend: ['allow_force_bend', 'text'],
+      AssembledQty: ['assembled_qty', 'int'],
+      AssemblyStatus: ['assembly_status', 'text'],
+      AssemblyMeta: ['assembly_meta', 'json', '[]']
     }
   },
   CuttingExtras: {
