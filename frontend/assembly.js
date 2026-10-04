@@ -246,7 +246,7 @@ function renderAssemblyShortfall() {
 
   var hint = document.createElement('div');
   hint.className = 'section-hint';
-  hint.textContent = 'Bending is marked done for this PO, but these pieces were never produced here. Check them before assembling.';
+  hint.textContent = 'The order needs these pieces and they have not been produced for it — no sheet cuts them, or fewer were cut than it needs. Check them before assembling.';
   host.appendChild(hint);
 
   rows.forEach(function (r) {
