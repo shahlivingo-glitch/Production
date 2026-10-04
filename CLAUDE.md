@@ -552,6 +552,12 @@ out of `ExtraPartInventory` explicitly. All of it is in `Bending.gs`:
   from the queue entirely once nothing is left to bend. Refused once the
   entry is bent or before its sheet is cut — surplus only makes sense as
   flat, not-yet-bent stock.
+- **Return a pull** — `returnPullToInventory(poNumber, extraKey, qty)`.
+  Undo for a pull clicked by mistake: puts the stock back in the ledger
+  and takes the task off the PO. A partial return shrinks the pulled row,
+  a full one deletes it. **Refused once any of it is marked bent** — bent
+  pieces aren't flat stock, so returning them would invent inventory that
+  doesn't physically exist.
 - **Pull stock in** — `pullFromExtraInventory(poNumber, modelName,
   partName, size, qty)`. Takes stock *out* of the ledger and injects it as
   a new bending task for this PO, so bending can proceed before Cutting has
@@ -633,6 +639,16 @@ a throwaway raw-row-dump action) if a new field seems to silently vanish,
 rather than assuming the write logic is wrong.
 
 ### Assembly Stage (`Assembly.gs` → `assembly.html`)
+
+**A PO reaches Assembly as soon as there are bent parts for one whole
+almirah — it does not wait for the whole order.** A 50-almirah PO bent in
+batches of 20 puts those 20 into assembly while the other 30 are still on
+the bending floor. The gate is `unitsBent` from the bending queue (whole
+almirahs the bent parts add up to, weakest part deciding), **not**
+`BendingStatus`. `readyNow` = `unitsBent − AssembledQty` is what the
+assembler can actually build today; recording is capped at it, so a
+cabinet whose sides are still flat cannot be assembled, and "Assemble
+Done" fills what is ready rather than the whole order.
 
 The one stage with no per-part anything. Three `Orders` columns carry it:
 
