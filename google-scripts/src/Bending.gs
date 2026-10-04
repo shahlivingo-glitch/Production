@@ -575,7 +575,30 @@ function moveEntryQtyToInventory(payload) {
     note: 'Surplus moved out of bending queue'
   });
   moves[idx] = alreadyMoved + qtyToMove;
-  writeRowUpdates('Orders', row._rowIndex, { PlanEntryInventoryMoves: JSON.stringify(moves) });
+
+  var updates = { PlanEntryInventoryMoves: JSON.stringify(moves) };
+
+  // Banking surplus shrinks what is left to bend, which can mean the pieces
+  // already bent now ARE the whole outstanding job. Without re-checking here
+  // the entry sits at "0 left" and never ticks - found live on PO-0001,
+  // where 10 BACK were bent and the other 40 were moved to inventory.
+  var pendingAfter = rawTotalQty - moves[idx];
+  if (pendingAfter > 0 && alreadyBent >= pendingAfter) {
+    var completion = parseJsonSafe(row.BendingCompletion, []);
+    var completionMeta = parseJsonSafe(row.BendingCompletionMeta, {});
+    var partialMap = parseJsonSafe(row.BendingPartial, {});
+    completion[idx] = true;
+    completionMeta[String(idx)] = {
+      at: nowIso(), by: resolveActorName(payload.token), fromInventory: false
+    };
+    delete partialMap[bendingPartialKey(idx, '')];
+    updates.BendingCompletion = JSON.stringify(completion);
+    updates.BendingCompletionMeta = JSON.stringify(completionMeta);
+    updates.BendingPartial = JSON.stringify(partialMap);
+    updates.BendingStatus = computeBendingStatus(completion, flat.length);
+  }
+
+  writeRowUpdates('Orders', row._rowIndex, updates);
   return getBendingQueueForOrder(payload.poNumber);
 }
 
