@@ -1,11 +1,11 @@
 -- =====================================================================
 -- All outstanding Bending Stage columns, in one go.
 --
--- bending_batch_qty was never applied (Postgres still reports it missing),
--- so order writes are currently not reaching Supabase at all: the mirror
--- pushes every Orders column in one upsert, and one unknown column
--- rejects the whole row. This file is safe to run even if part of it was
--- applied before - every statement is IF NOT EXISTS.
+-- Applied 2026-10-04; kept as the migration record. Until it ran,
+-- bending_batch_qty was missing and NO order write reached Supabase at
+-- all: the mirror pushes every Orders column in one upsert, so a single
+-- unknown column rejects the whole row. Safe to re-run - every statement
+-- is IF NOT EXISTS.
 -- =====================================================================
 
 alter table orders
