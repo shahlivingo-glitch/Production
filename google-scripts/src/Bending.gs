@@ -232,6 +232,22 @@ function getBendingQueueForOrder(poNumber) {
   var planEntryMoves = parseJsonSafe(order.PlanEntryInventoryMoves, {});
   var bendingPartial = parseJsonSafe(order.BendingPartial, {});
 
+  // Batch defaults to the whole order, so an untouched PO reads as "what
+  // this order needs" rather than silently scaling to something arbitrary.
+  var orderQty = Number(order.Qty) || 0;
+  var batchQty = Number(order.BendingBatchQty) || orderQty;
+  var perUnitByPart = {};
+  try {
+    var pp = getModelParts(order.ModelName).partsPerUnit || {};
+    Object.keys(pp).forEach(function (n) {
+      var def = pp[n];
+      perUnitByPart[String(n).trim()] =
+        (def && typeof def === 'object') ? (Number(def.qty) || 0) : (Number(def) || 0);
+    });
+  } catch (err) {
+    // model gone - every part simply has no per-unit figure to scale by
+  }
+
   // Any plan entry (a required part or a plan-level "extra" output alike)
   // can have some or all of its produced qty manually moved to the Leftover
   // Ledger via moveEntryQtyToInventory - for whenever a run produced more
@@ -263,6 +279,10 @@ function getBendingQueueForOrder(poNumber) {
       unlocked: !!sheetCompletion[entry.sheetIndex],
       done: !!bendingCompletion[index],
       bentQty: Number(bendingPartial[String(index)]) || 0,
+      perUnit: perUnitByPart[String(entry.partName || '').trim()] || null,
+      batchNeed: perUnitByPart[String(entry.partName || '').trim()]
+        ? perUnitByPart[String(entry.partName || '').trim()] * batchQty
+        : null,
       leftoverAvailable: leftoverAvailable
     };
   }).filter(function (entry) {
@@ -288,6 +308,7 @@ function getBendingQueueForOrder(poNumber) {
     cuttingStatus: order.CuttingStatus || 'pending',
     entries: entries,
     extraEntries: extraEntries,
+    batchQty: batchQty,
     unitsBent: computeUnitsBent(order, entries),
     stillToCut: buildStillToCut(order, entries, extraEntries),
     availableInventory: availableInventory,
@@ -337,96 +358,29 @@ function getBendingPartial(row, entryIndex, extraKey) {
   return Number(map[bendingPartialKey(entryIndex, extraKey)]) || 0;
 }
 
-// Bending happens in whole almirahs, not in parts - a bender does ten
-// cabinets, not "forty shelves". This takes that count and spreads it
-// across the plan automatically: ten units of a model needing 4 shelves
-// each books 40 shelves, 10 backs, 10 bottoms, and so on.
+// How many almirahs the bender is working through right now. Stored per PO
+// so it survives a reload and whoever opens the page next sees the same
+// batch - it describes the job, not one person's screen.
 //
-// A part can sit on more than one sheet (SHELF comes off Sheet 2 AND
-// Sheet 4), so its requirement is filled entry by entry in order, spilling
-// into the next once one is full - which is how the pieces actually get
-// taken off the pile.
-//
-// Everything completed by this is finished in a SINGLE row write rather
-// than by calling setBendingComplete per part: on Apps Script that would
-// be a read+write round trip each, and a model with eleven parts would
-// take ten seconds to record one number.
-function addBendingProgressByUnits(payload) {
+// It records NOTHING about bending. It only scales the quantity each part
+// card shows (per-unit x batch), so the bender can read off what this batch
+// needs instead of doing the arithmetic. Marking a part done is still the
+// checkbox, and still means the whole part for the PO.
+function setBendingBatchQty(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
     throw new Error('PO not found: ' + payload.poNumber);
   }
-  var units = Number(payload.units);
-  if (!(units > 0)) {
-    throw new Error('Enter how many almirahs were bent.');
+  var qty = Number(payload.qty);
+  if (!(qty > 0)) {
+    throw new Error('Enter how many almirahs this batch covers.');
   }
-
-  var modelParts = {};
-  try {
-    modelParts = getModelParts(row.ModelName).partsPerUnit || {};
-  } catch (err) {
-    throw new Error('This order’s model no longer exists, so per-unit quantities are unknown.');
+  var orderQty = Number(row.Qty) || 0;
+  if (orderQty > 0 && qty > orderQty) {
+    throw new Error('This PO is only for ' + orderQty + ' almirahs.');
   }
-
-  var queue = getBendingQueueForOrder(payload.poNumber);
-  var partial = parseJsonSafe(row.BendingPartial, {});
-  var completion = parseJsonSafe(row.BendingCompletion, []);
-  var completionMeta = parseJsonSafe(row.BendingCompletionMeta, {});
-  var actor = resolveActorName(payload.token);
-  var stamp = nowIso();
-
-  var applied = {};
-  var shortfall = {};
-
-  Object.keys(modelParts).forEach(function (partName) {
-    var def = modelParts[partName];
-    var perUnit = (def && typeof def === 'object') ? (Number(def.qty) || 0) : (Number(def) || 0);
-    if (!(perUnit > 0)) return;
-
-    var need = perUnit * units;
-    var key = String(partName).trim();
-
-    queue.entries.forEach(function (e) {
-      if (need <= 0 || e.done || !e.unlocked) return;
-      if (String(e.partName).trim() !== key) return;
-
-      var room = (Number(e.totalQty) || 0) - (Number(e.bentQty) || 0);
-      if (room <= 0) return;
-
-      var take = Math.min(room, need);
-      var next = (Number(e.bentQty) || 0) + take;
-      need -= take;
-      applied[key] = (applied[key] || 0) + take;
-
-      if (next >= (Number(e.totalQty) || 0)) {
-        // Filled it - record completion inline, same fields setBendingComplete
-        // writes, and drop the partial count the boolean now supersedes.
-        completion[e.index] = true;
-        completionMeta[String(e.index)] = { at: stamp, by: actor, fromInventory: false };
-        delete partial[String(e.index)];
-      } else {
-        partial[String(e.index)] = next;
-      }
-    });
-
-    // Not enough cut yet to cover those units - reported back rather than
-    // silently part-applied, since it means the order cannot actually ship.
-    if (need > 0) shortfall[key] = need;
-  });
-
-  var sheets = getOrderActiveSheets(row);
-  writeRowUpdates('Orders', row._rowIndex, {
-    BendingPartial: JSON.stringify(partial),
-    BendingCompletion: JSON.stringify(completion),
-    BendingCompletionMeta: JSON.stringify(completionMeta),
-    BendingStatus: computeBendingStatus(completion, flattenPlanOutputs(sheets).length)
-  });
-
-  var result = getBendingQueueForOrder(payload.poNumber);
-  result.unitsApplied = units;
-  result.appliedByPart = applied;
-  result.shortfallByPart = shortfall;
-  return result;
+  writeRowUpdates('Orders', row._rowIndex, { BendingBatchQty: qty });
+  return getBendingQueueForOrder(payload.poNumber);
 }
 
 function setBendingComplete(payload) {

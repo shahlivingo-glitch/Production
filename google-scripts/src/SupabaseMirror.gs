@@ -112,7 +112,8 @@ var SUPABASE_TABLES = {
       SheetCompletionMeta: ['sheet_completion_meta', 'json'],
       BendingCompletionMeta: ['bending_completion_meta', 'json'],
       ExtraBendingCompletionMeta: ['extra_bending_completion_meta', 'json'],
-      BendingPartial: ['bending_partial', 'json']
+      BendingPartial: ['bending_partial', 'json'],
+      BendingBatchQty: ['bending_batch_qty', 'int']
     }
   },
   CuttingExtras: {

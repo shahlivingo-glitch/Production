@@ -322,33 +322,28 @@ function pullShortfallFromInventory(row, source, qtyInput, btn) {
     showFatalError(err);
   });
 }
-
-// Bending is done in whole almirahs, so this is the control that matches
-// how the work actually happens: one number, and every part moves by its
-// own per-unit quantity. The per-part boxes below stay for the exceptions
-// (only the doors done, one part short).
+// The batch control. It sets how many almirahs the bender is working
+// through, which only changes the quantity each card shows - it records no
+// bending at all. Marking a part done is still its checkbox.
 function renderBendUnitsBar() {
   var host = el('bend-units-bar');
   if (!host) return;
   host.innerHTML = '';
-
-  var anyBendable = (currentBendingQueue.entries || []).some(function (e) {
-    return !e.done && e.unlocked && (Number(e.totalQty) || 0) > (Number(e.bentQty) || 0);
-  });
-  if (!anyBendable || !canEdit('bendingStage')) {
-    host.style.display = 'none';
-    return;
-  }
+  if (!canEdit('bendingStage')) { host.style.display = 'none'; return; }
   host.style.display = 'flex';
+
+  var orderQty = Number(currentBendingQueue.qty) || 0;
+  var batch = Number(currentBendingQueue.batchQty) || orderQty;
 
   var label = document.createElement('span');
   label.className = 'bend-units-label';
-  label.textContent = 'Almirahs bent:';
+  label.textContent = 'Bending batch:';
 
   var input = document.createElement('input');
   input.type = 'number';
   input.min = '1';
-  input.placeholder = 'Qty';
+  input.max = String(orderQty || 1);
+  input.value = String(batch);
   input.className = 'bend-units-input';
 
   var btn = document.createElement('button');
@@ -356,33 +351,30 @@ function renderBendUnitsBar() {
   btn.className = 'btn-primary';
   btn.textContent = 'Apply to all parts';
   btn.addEventListener('click', function () {
-    var units = Number(input.value);
-    if (!(units > 0)) { showFatalError('Enter how many almirahs were bent.'); return; }
-    applyBendingUnits(units, btn);
+    var qty = Number(input.value);
+    if (!(qty > 0)) { showFatalError('Enter how many almirahs this batch covers.'); return; }
+    applyBendingBatch(qty, btn);
   });
 
-  var done = document.createElement('span');
-  done.className = 'bend-units-done';
-  var ub = Number(currentBendingQueue.unitsBent) || 0;
-  done.textContent = ub > 0
-    ? ub + ' of ' + currentBendingQueue.qty + ' fully bent so far'
-    : 'none fully bent yet';
+  var note = document.createElement('span');
+  note.className = 'bend-units-done';
+  note.textContent = 'almirahs of ' + orderQty + ' — part quantities below follow this';
 
   host.appendChild(label);
   host.appendChild(input);
   host.appendChild(btn);
-  host.appendChild(done);
+  host.appendChild(note);
 }
 
-function applyBendingUnits(units, btn) {
+function applyBendingBatch(qty, btn) {
   if (!canEdit('bendingStage')) {
-    showFatalError('View only - ask an admin for edit access to mark parts bent.');
+    showFatalError('View only - ask an admin for edit access to change this.');
     return;
   }
   btn.disabled = true;
-  apiPost('addBendingProgressByUnits', {
+  apiPost('setBendingBatchQty', {
     poNumber: currentBendingQueue.poNumber,
-    units: units
+    qty: qty
   }).then(function (result) {
     if (!result.ok) { btn.disabled = false; showFatalError(result.error); return; }
     currentBendingQueue = result.data;
@@ -390,16 +382,6 @@ function applyBendingUnits(units, btn) {
     renderBendUnitsBar();
     renderBendingEntries();
     renderExtraBendingEntries();
-
-    // Say so when the plan could not cover those units - otherwise the
-    // numbers quietly come up short and it looks like the entry was missed.
-    var short = result.data.shortfallByPart || {};
-    var names = Object.keys(short);
-    if (names.length) {
-      alert('Applied ' + units + ' almirah(s), but these parts ran out of bendable stock:\n\n' +
-        names.map(function (n) { return '  ' + n + ' — ' + short[n] + ' pcs short'; }).join('\n') +
-        '\n\nThey still need cutting before those almirahs are complete.');
-    }
   }).catch(function (err) {
     btn.disabled = false;
     showFatalError(err);
@@ -489,18 +471,29 @@ function buildUseInventoryCheckbox(entry) {
 // "50 bent, 98 left" - shown only once some progress exists, so a fresh
 // entry stays as clean as it was before partial bending existed.
 function formatBendingProgress(entry) {
-  var bent = Number(entry.bentQty) || 0;
-  if (!bent || entry.done) return '';
-  var left = Math.max(0, (Number(entry.totalQty) || 0) - bent);
-  return ' <span class="bend-progress">' + bent + ' bent, ' + left + ' left</span>';
+  // A finished entry counts as all of it - the partial count is cleared once
+  // the checkbox takes over, so reading bentQty alone would show nothing.
+  var bent = entry.done ? (Number(entry.totalQty) || 0) : (Number(entry.bentQty) || 0);
+  if (!bent) return '';
+  return ' <span class="bend-progress">' + bent + ' already bent</span>';
 }
+
 function formatBendingQtyText(entry) {
   var total = entry.totalQty !== undefined ? entry.totalQty : entry.qty;
+
+  // With a per-unit figure the card leads with what the current batch needs,
+  // and keeps the produced count beside it - the bender needs both: how many
+  // to bend now, and whether that many even exist yet.
+  if (entry.batchNeed !== null && entry.batchNeed !== undefined) {
+    return entry.batchNeed + ' <span class="muted">(' + total + ' cut'
+      + (entry.qty ? ', ' + entry.qty + '/sheet' : '') + ')</span>';
+  }
   if (total !== entry.qty) {
     return total + ' <span class="muted">(' + entry.qty + '/sheet)</span>';
   }
   return String(total);
 }
+
 
 function buildBendingEntryCard(entry) {
   var card = document.createElement('div');
