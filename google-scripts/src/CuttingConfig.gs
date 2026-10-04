@@ -82,7 +82,12 @@ function createCuttingConfigModel(payload) {
     ModelName: name,
     PlanName: planName,
     Sheets: JSON.stringify([]),
-    UpdatedAt: nowIso()
+    UpdatedAt: nowIso(),
+    // Stated explicitly rather than left blank. A blank became '' in the
+    // Sheet, which Postgres rejects against the plan_type check - so every
+    // newly created model's first plan silently failed to mirror.
+    PlanType: 'per-unit',
+    BaseQty: 0
   });
   return { modelName: name, planName: planName };
 }

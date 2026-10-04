@@ -64,7 +64,7 @@ var SUPABASE_TABLES = {
       PlanName: ['plan_name', 'text'],
       Sheets: ['sheets', 'json', '[]'],
       UpdatedAt: ['updated_at', 'ts'],
-      PlanType: ['plan_type', 'text'],
+      PlanType: ['plan_type', 'planType'],
       BaseQty: ['base_qty', 'int']
     }
   },
@@ -102,7 +102,7 @@ var SUPABASE_TABLES = {
       CreatedAt: ['created_at', 'ts'],
       MultiYieldDecisions: ['multi_yield_decisions', 'json'],
       SheetStockConsumed: ['sheet_stock_consumed', 'json'],
-      PlanType: ['plan_type', 'text'],
+      PlanType: ['plan_type', 'planType'],
       BulkBaseQty: ['bulk_base_qty', 'int'],
       BulkMultiplier: ['bulk_multiplier', 'int'],
       SheetQtyOverrides: ['sheet_qty_overrides', 'json'],
@@ -220,6 +220,11 @@ function supabaseCoerce(value, kind, jsonDefault) {
   if (kind === 'int' || kind === 'num') {
     var n = Number(value);
     return isNaN(n) ? 0 : n;
+  }
+  // Constrained columns: anything the Sheet does not recognise falls back
+  // to the app's own default rather than failing the whole row upsert.
+  if (kind === 'planType') {
+    return (String(value) === 'bulk') ? 'bulk' : 'per-unit';
   }
   if (kind === 'textOrNull') {
     return (value === '' || value === null || value === undefined) ? null : String(value);
