@@ -238,12 +238,13 @@ function buildStillToCutCard(row) {
   var source = findInventoryForPart(row.partName, row.size);
 
   if (!source) {
-    // Offering the button with nothing behind it would just walk the operator
-    // into the server's "Only 0 pcs available".
+    // Offering the pull button with nothing behind it would just walk the
+    // operator into the server's "Only 0 pcs available".
     var none = document.createElement('span');
     none.className = 'still-to-cut-none';
     none.textContent = 'None of this part in Extra Inventory to pull from.';
     actions.appendChild(none);
+    appendForceBendButton(actions, row);
     card.appendChild(actions);
     return card;
   }
@@ -272,8 +273,49 @@ function buildStillToCutCard(row) {
   actions.appendChild(qtyInput);
   actions.appendChild(btn);
   actions.appendChild(avail);
+  appendForceBendButton(actions, row);
   card.appendChild(actions);
   return card;
+}
+
+// Marks a shortfall bent even though it was never cut here. Asks nothing
+// and checks no stock on purpose: the operator is telling the system
+// something it has no way to know, and without it a PO where a few pieces
+// came from elsewhere can never be finished. Admin-gated per PO.
+function appendForceBendButton(actions, row) {
+  if (!currentBendingQueue.forceBendAllowed || !canEdit('bendingStage')) return;
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-secondary force-bend-btn';
+  btn.textContent = 'Mark ' + row.stillToCut + ' bent anyway';
+  btn.title = 'Record these as bent without them being cut here';
+  btn.addEventListener('click', function () {
+    forceBendShortfall(row, btn);
+  });
+  actions.appendChild(btn);
+}
+
+function forceBendShortfall(row, btn) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to change this.');
+    return;
+  }
+  btn.disabled = true;
+  apiPost('forceBendShortfall', {
+    poNumber: currentBendingQueue.poNumber,
+    partName: row.partName
+  }).then(function (result) {
+    if (!result.ok) { btn.disabled = false; showFatalError(result.error); return; }
+    currentBendingQueue = result.data;
+    renderBendingStatusPill();
+    renderBendUnitsBar();
+    renderBendingEntries();
+    renderExtraBendingEntries();
+  }).catch(function (err) {
+    btn.disabled = false;
+    showFatalError(err);
+  });
 }
 
 function pullShortfallFromInventory(row, source, qtyInput, btn) {
@@ -364,6 +406,81 @@ function renderBendUnitsBar() {
   host.appendChild(input);
   host.appendChild(btn);
   host.appendChild(note);
+
+  // Anything force-bent is listed here. An override that leaves no trace is
+  // worse than no override: this is the only place it is visible once the
+  // shortfall card it came from has gone.
+  var forced = currentBendingQueue.forceBent || {};
+  var isAdmin = getCurrentUser() && getCurrentUser().role === 'admin';
+  Object.keys(forced).forEach(function (partName) {
+    var chip = document.createElement('span');
+    chip.className = 'force-bent-chip';
+    chip.textContent = partName + ' ' + (forced[partName].qty || 0) + ' forced';
+    chip.title = 'Marked bent without being cut'
+      + (forced[partName].by ? ' by ' + forced[partName].by : '')
+      + (forced[partName].at ? ' on ' + new Date(forced[partName].at).toLocaleString() : '');
+    if (isAdmin) {
+      var undo = document.createElement('button');
+      undo.type = 'button';
+      undo.className = 'icon-btn';
+      undo.textContent = '×';
+      undo.title = 'Undo this override';
+      undo.addEventListener('click', function () { clearForceBend(partName, undo); });
+      chip.appendChild(undo);
+    }
+    host.appendChild(chip);
+  });
+
+  // Admin-only switch for the force-bend override on this PO. Hidden
+  // entirely from non-admins rather than shown disabled - it is not their
+  // decision to make, and a greyed control only invites asking about it.
+  if (getCurrentUser() && getCurrentUser().role === 'admin') {
+    var wrap = document.createElement('label');
+    wrap.className = 'force-bend-toggle';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!currentBendingQueue.forceBendAllowed;
+    cb.addEventListener('change', function (e) {
+      setAllowForceBend(e.target.checked, cb);
+    });
+    var t = document.createElement('span');
+    t.textContent = 'Allow "mark bent anyway" on this PO';
+    wrap.appendChild(cb);
+    wrap.appendChild(t);
+    host.appendChild(wrap);
+  }
+}
+
+function clearForceBend(partName, btn) {
+  btn.disabled = true;
+  apiPost('clearForceBend', {
+    poNumber: currentBendingQueue.poNumber,
+    partName: partName
+  }).then(function (result) {
+    if (!result.ok) { btn.disabled = false; showFatalError(result.error); return; }
+    currentBendingQueue = result.data;
+    renderBendingStatusPill();
+    renderBendUnitsBar();
+    renderBendingEntries();
+  }).catch(function (err) { btn.disabled = false; showFatalError(err); });
+}
+
+function setAllowForceBend(allowed, cb) {
+  cb.disabled = true;
+  apiPost('setAllowForceBend', {
+    poNumber: currentBendingQueue.poNumber,
+    allowed: allowed
+  }).then(function (result) {
+    cb.disabled = false;
+    if (!result.ok) { cb.checked = !allowed; showFatalError(result.error); return; }
+    currentBendingQueue = result.data;
+    renderBendUnitsBar();
+    renderBendingEntries();
+  }).catch(function (err) {
+    cb.disabled = false;
+    cb.checked = !allowed;
+    showFatalError(err);
+  });
 }
 
 function applyBendingBatch(qty, btn) {

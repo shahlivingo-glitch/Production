@@ -105,6 +105,7 @@ var ACTION_MENUS = {
   bendingQueueForOrder: ['bendingStage', 'view'],
   setBendingComplete: ['bendingStage', 'edit'],
   setBendingBatchQty: ['bendingStage', 'edit'],
+  forceBendShortfall: ['bendingStage', 'edit'],
   setExtraBendingComplete: ['bendingStage', 'edit'],
   addExtraToInventoryNow: ['bendingStage', 'edit'],
   moveEntryQtyToInventory: ['bendingStage', 'edit'],
@@ -218,6 +219,11 @@ var POST_ACTIONS = {
   addCuttingExtra: function (b) { return addCuttingExtra(b); },
   setBendingComplete: function (b) { return setBendingComplete(b); },
   setBendingBatchQty: function (b) { return setBendingBatchQty(b); },
+  forceBendShortfall: function (b) { return forceBendShortfall(b); },
+  // admin-only, enforced by requireAdmin inside - deliberately absent
+  // from ACTION_MENUS so a bendingStage:edit grant cannot reach it
+  setAllowForceBend: function (b) { return setAllowForceBend(b); },
+  clearForceBend: function (b) { return clearForceBend(b); },
   setExtraBendingComplete: function (b) { return setExtraBendingComplete(b); },
   addExtraToInventoryNow: function (b) { return addExtraToInventoryNow(b); },
   moveEntryQtyToInventory: function (b) { return moveEntryQtyToInventory(b); },

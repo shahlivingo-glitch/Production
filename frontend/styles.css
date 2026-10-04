@@ -984,6 +984,37 @@ a { color: var(--color-accent); }
 
 /* Partial bending progress on an entry that is started but not finished.
    Amber rather than red: it is work in hand, not a problem. */
+/* The override reads as an override: it borrows the red of the card it
+   sits on rather than looking like an ordinary action. */
+.force-bend-btn {
+  border-color: var(--color-destructive);
+  color: var(--color-destructive);
+  font-weight: 600;
+}
+
+.force-bent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-destructive);
+  background: var(--color-destructive-soft);
+  border: 1px solid var(--color-destructive);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+}
+
+.force-bend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  margin-left: auto;
+}
+
 .bend-units-bar {
   display: flex;
   align-items: center;

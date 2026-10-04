@@ -153,6 +153,15 @@ function buildStillToCut(order, entries, extraEntries) {
     addCut(e.partName, e.totalQty);
   });
 
+  // Pieces the operator declared bent without them having been cut here.
+  // They count against the requirement so the shortfall clears - the whole
+  // point of the override is that where they came from is not this app's
+  // business (off-system stock, a previous run, a hand-cut piece).
+  var forced = parseJsonSafe(order.ForceBentParts, {});
+  Object.keys(forced).forEach(function (partName) {
+    addCut(partName, (forced[partName] && forced[partName].qty) || 0);
+  });
+
   var out = [];
   Object.keys(modelParts).forEach(function (partName) {
     var def = modelParts[partName];
@@ -309,6 +318,8 @@ function getBendingQueueForOrder(poNumber) {
     entries: entries,
     extraEntries: extraEntries,
     batchQty: batchQty,
+    forceBendAllowed: isForceBendAllowed(order),
+    forceBent: parseJsonSafe(order.ForceBentParts, {}),
     unitsBent: computeUnitsBent(order, entries),
     stillToCut: buildStillToCut(order, entries, extraEntries),
     availableInventory: availableInventory,
@@ -366,6 +377,86 @@ function getBendingPartial(row, entryIndex, extraKey) {
 // card shows (per-unit x batch), so the bender can read off what this batch
 // needs instead of doing the arithmetic. Marking a part done is still the
 // checkbox, and still means the whole part for the PO.
+// Declares a shortfall bent without it ever being cut here. Deliberately
+// asks nothing and checks no stock: the operator is telling the system
+// something it cannot know, and the alternative is a PO that can never be
+// completed because a few pieces came from somewhere else.
+//
+// It is an override, so it records who did it and when - and it is gated
+// per PO by AllowForceBend, which an admin controls.
+function forceBendShortfall(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  if (!isForceBendAllowed(row)) {
+    throw new Error('Force-bend is turned off for this PO.');
+  }
+  var partName = String(payload.partName || '').trim();
+  if (!partName) {
+    throw new Error('Which part?');
+  }
+
+  var queue = getBendingQueueForOrder(payload.poNumber);
+  var target = null;
+  (queue.stillToCut || []).forEach(function (r) {
+    if (String(r.partName).trim() === partName) target = r;
+  });
+  if (!target) {
+    throw new Error('That part is no longer short - nothing to force.');
+  }
+
+  var forced = parseJsonSafe(row.ForceBentParts, {});
+  var prev = (forced[partName] && Number(forced[partName].qty)) || 0;
+  forced[partName] = {
+    qty: prev + target.stillToCut,
+    at: nowIso(),
+    by: resolveActorName(payload.token)
+  };
+
+  writeRowUpdates('Orders', row._rowIndex, { ForceBentParts: JSON.stringify(forced) });
+  return getBendingQueueForOrder(payload.poNumber);
+}
+
+// Default ON: the button is meant to be there, and an admin takes it away
+// per PO rather than having to switch it on before it can be used.
+function isForceBendAllowed(row) {
+  var v = row.AllowForceBend;
+  if (v === '' || v === null || v === undefined) return true;
+  return !(v === false || v === 'false' || v === 'FALSE' || v === 0 || v === '0');
+}
+
+// Undo for the override. It has to exist: force-bend permanently changes
+// whether a PO can complete, the card vanishes the moment it is used, and
+// a mis-click would otherwise be unrecoverable from the UI.
+function clearForceBend(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  requireAdmin(payload.token);
+  var partName = String(payload.partName || '').trim();
+  var forced = parseJsonSafe(row.ForceBentParts, {});
+  if (!forced[partName]) {
+    throw new Error('Nothing force-bent for that part.');
+  }
+  delete forced[partName];
+  writeRowUpdates('Orders', row._rowIndex, { ForceBentParts: JSON.stringify(forced) });
+  return getBendingQueueForOrder(payload.poNumber);
+}
+
+function setAllowForceBend(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  requireAdmin(payload.token);
+  writeRowUpdates('Orders', row._rowIndex, {
+    AllowForceBend: payload.allowed ? 'true' : 'false'
+  });
+  return getBendingQueueForOrder(payload.poNumber);
+}
+
 function setBendingBatchQty(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
