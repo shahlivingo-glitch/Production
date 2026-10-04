@@ -1,12 +1,16 @@
 // Assembly: the last stage, where bent parts become finished almirahs.
 //
-// Unlike Cutting and Bending this stage has no per-part detail at all. By
-// the time a PO reaches here every part is bent, and what the assembler
-// tracks is whole cabinets - so the entire stage is one number per PO.
+// Unlike Cutting and Bending this stage has no per-part detail at all. What
+// the assembler tracks is whole cabinets, so the entire stage is one number
+// per PO.
 //
-// A PO only appears once BendingStatus is 'complete'. That is the app's own
-// definition of "all parts bent", so the gate stays in step with Bending
-// rather than inventing a second opinion about it.
+// A PO appears here as soon as there are bent parts for at least one whole
+// almirah - NOT only once the entire order is bent. A 50-almirah PO bent in
+// batches of 20 should put those 20 into assembly while the other 30 are
+// still on the bending floor; waiting for all 50 would stall the line for
+// no reason. What gates it instead is `unitsBent` (Bending.gs): the whole
+// almirahs the bent parts add up to, weakest part deciding, since nine bent
+// backs and forty bent shelves are still only nine cabinets.
 
 function assemblyStatusFor(row) {
   var ordered = Number(row.Qty) || 0;
@@ -14,25 +18,39 @@ function assemblyStatusFor(row) {
   return (ordered > 0 && done >= ordered) ? 'complete' : 'pending';
 }
 
-// POs ready to assemble: bending finished, assembly not. Shortfalls are
-// reported alongside rather than used to hide the PO - a part that was
-// never cut cannot have been bent, so if Bending says complete while parts
-// are still short, that is worth showing the assembler, not acting on
-// silently behind their back.
+// Whole almirahs this PO has bent parts for. Falls back to the stored
+// bending status if the queue cannot be built (model deleted, plan gone) -
+// a PO whose bending is finished can always be assembled in full.
+function assemblyUnitsAvailable(row) {
+  try {
+    return Number(getBendingQueueForOrder(String(row.PoNumber)).unitsBent) || 0;
+  } catch (err) {
+    return ((row.BendingStatus || 'pending') === 'complete') ? (Number(row.Qty) || 0) : 0;
+  }
+}
+
+// POs with something to assemble: bent parts for more almirahs than have
+// been assembled so far. A PO still mid-bending belongs here as soon as its
+// first batch is bent.
 function listPendingAssemblyOrders() {
   var result = [];
   getAllRows('Orders').forEach(function (r) {
-    if ((r.BendingStatus || 'pending') !== 'complete') return;
     if (assemblyStatusFor(r) === 'complete') return;
 
     var ordered = Number(r.Qty) || 0;
     var done = Number(r.AssembledQty) || 0;
+    var bent = Math.min(ordered, assemblyUnitsAvailable(r));
+    if (bent <= done) return;
+
     result.push({
       poNumber: String(r.PoNumber),
       modelName: String(r.ModelName),
       qty: ordered,
       assembledQty: done,
       remaining: Math.max(0, ordered - done),
+      unitsBent: bent,
+      readyNow: Math.max(0, bent - done),
+      bendingStatus: r.BendingStatus || 'pending',
       partyName: r.PartyName || '',
       deliveryDeadline: r.DeliveryDeadline || '',
       createdAt: r.CreatedAt
@@ -49,16 +67,18 @@ function getAssemblyForOrder(poNumber) {
   var ordered = Number(row.Qty) || 0;
   var done = Number(row.AssembledQty) || 0;
 
-  // Surfaced, not enforced: parts the plan never produced. Bending can read
-  // complete while these are outstanding, and the assembler is the person
-  // who will discover it physically - better they see it on the screen.
-  var shortfalls = [];
+  // One queue read serves both the bent-almirah count and the shortfall
+  // list below - building it twice would double the cost of opening the
+  // page for nothing.
+  var queue = null;
   try {
-    var queue = getBendingQueueForOrder(poNumber);
-    shortfalls = queue.stillToCut || [];
+    queue = getBendingQueueForOrder(poNumber);
   } catch (err) {
     // bending data unavailable - assembly can still be recorded
   }
+  var bent = queue
+    ? Math.min(ordered, Number(queue.unitsBent) || 0)
+    : (((row.BendingStatus || 'pending') === 'complete') ? ordered : 0);
 
   return {
     poNumber: String(row.PoNumber),
@@ -66,6 +86,12 @@ function getAssemblyForOrder(poNumber) {
     qty: ordered,
     assembledQty: done,
     remaining: Math.max(0, ordered - done),
+    // Whole almirahs there are bent parts for, and how many of those are
+    // not yet assembled. readyNow is what the assembler can actually build
+    // today; remaining is the whole order.
+    unitsBent: bent,
+    readyNow: Math.max(0, bent - done),
+    stillBending: Math.max(0, ordered - bent),
     partyName: row.PartyName || '',
     dxfRefNo: row.DxfRefNo || '',
     colourPlan: row.ColourPlan || '',
@@ -74,7 +100,9 @@ function getAssemblyForOrder(poNumber) {
     bendingStatus: row.BendingStatus || 'pending',
     assemblyStatus: assemblyStatusFor(row),
     assemblyMeta: parseJsonSafe(row.AssemblyMeta, []),
-    stillToCut: shortfalls
+    // Surfaced, not enforced: parts the plan never produced. The assembler
+    // is the person who will discover it physically - better they see it.
+    stillToCut: queue ? (queue.stillToCut || []) : []
   };
 }
 
@@ -82,16 +110,14 @@ function getAssemblyForOrder(poNumber) {
 // and the natural thing to type is "I did 8 more today", not a running
 // total the assembler has to work out themselves.
 //
-// Caps at the order quantity rather than refusing an overshoot: typing 10
-// when 8 remain means "that's the lot", and failing it would be pedantry on
-// the shop floor. Reaching the total completes the PO.
+// Capped at what there are bent parts for, not at the order quantity: you
+// cannot assemble a cabinet whose sides are still flat. Typing more than
+// that records what is actually available rather than failing - pedantry on
+// the shop floor helps nobody - and the response says what was recorded.
 function addAssemblyProgress(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
     throw new Error('PO not found: ' + payload.poNumber);
-  }
-  if ((row.BendingStatus || 'pending') !== 'complete') {
-    throw new Error('Bending is not finished for this PO yet.');
   }
   var qty = Number(payload.qty);
   if (!(qty > 0)) {
@@ -103,8 +129,14 @@ function addAssemblyProgress(payload) {
   if (done >= ordered) {
     throw new Error('This PO is already fully assembled.');
   }
-  var next = Math.min(ordered, done + qty);
+  var bent = Math.min(ordered, assemblyUnitsAvailable(row));
+  var ready = bent - done;
+  if (ready <= 0) {
+    throw new Error('No almirahs are fully bent yet - bending has only covered ' +
+      bent + ' of ' + ordered + '.');
+  }
 
+  var next = done + Math.min(qty, ready);
   var meta = parseJsonSafe(row.AssemblyMeta, []);
   meta.push({ qty: next - done, at: nowIso(), by: resolveActorName(payload.token) });
 
@@ -116,29 +148,32 @@ function addAssemblyProgress(payload) {
   return getAssemblyForOrder(payload.poNumber);
 }
 
-// "Assemble done" for the whole remainder in one click - the common case
-// where the PO is finished in a single session.
+// "Assemble Done" for everything currently bent - the common case where a
+// batch is finished in one session. It fills what is ready, not the whole
+// order, so a part-bent PO stays open for its remaining batches.
 function markAssemblyComplete(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
     throw new Error('PO not found: ' + payload.poNumber);
-  }
-  if ((row.BendingStatus || 'pending') !== 'complete') {
-    throw new Error('Bending is not finished for this PO yet.');
   }
   var ordered = Number(row.Qty) || 0;
   var done = Number(row.AssembledQty) || 0;
   if (done >= ordered) {
     throw new Error('This PO is already fully assembled.');
   }
+  var bent = Math.min(ordered, assemblyUnitsAvailable(row));
+  if (bent <= done) {
+    throw new Error('No almirahs are fully bent yet - bending has only covered ' +
+      bent + ' of ' + ordered + '.');
+  }
 
   var meta = parseJsonSafe(row.AssemblyMeta, []);
-  meta.push({ qty: ordered - done, at: nowIso(), by: resolveActorName(payload.token) });
+  meta.push({ qty: bent - done, at: nowIso(), by: resolveActorName(payload.token) });
 
   writeRowUpdates('Orders', row._rowIndex, {
-    AssembledQty: ordered,
+    AssembledQty: bent,
     AssemblyMeta: JSON.stringify(meta),
-    AssemblyStatus: 'complete'
+    AssemblyStatus: (bent >= ordered) ? 'complete' : 'pending'
   });
   return getAssemblyForOrder(payload.poNumber);
 }

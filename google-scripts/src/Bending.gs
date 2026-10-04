@@ -842,6 +842,95 @@ function pullFromExtraInventory(payload) {
   return getBendingQueueForOrder(payload.poNumber);
 }
 
+// Undo for a pull that shouldn't have happened: puts the stock back in the
+// Leftover Ledger and takes the task off this PO's bending list.
+//
+// Refused once the pulled pieces are marked bent (in whole or in part) -
+// they are not flat stock any more, so returning them would invent
+// inventory that physically does not exist. Un-tick it first.
+//
+// A partial return just shrinks the pulled row; a full one removes it, so
+// the queue never keeps a task for nothing.
+function returnPullToInventory(payload) {
+  var order = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!order) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var key = String(payload.extraKey || '');
+  if (!key) {
+    throw new Error('Which pulled part?');
+  }
+
+  var extraRow = findRow('CuttingExtras', function (r) {
+    return String(r.PoNumber) === String(payload.poNumber) && String(r.ExtraId) === key;
+  });
+  if (!extraRow || extraRow.Type !== 'inventory-pull') {
+    throw new Error('That is not a part pulled from Extra Inventory.');
+  }
+
+  var completion = parseJsonSafe(order.ExtraBendingCompletion, {});
+  var partialMap = parseJsonSafe(order.BendingPartial, {});
+  var partialKey = bendingPartialKey(-1, key);
+  if (completion[key]) {
+    throw new Error('This pulled part is already marked bent - un-tick it before returning it.');
+  }
+  if (Number(partialMap[partialKey]) > 0) {
+    throw new Error('Some of this pulled part is already bent - clear that progress before returning it.');
+  }
+
+  var details = parseJsonSafe(extraRow.Details, {});
+  var pulledQty = Number(details.qty) || 0;
+  var qty = (payload.qty === undefined || payload.qty === null || payload.qty === '')
+    ? pulledQty : Number(payload.qty);
+  if (!(qty > 0)) {
+    throw new Error('Enter a quantity greater than zero.');
+  }
+  if (qty > pulledQty) {
+    throw new Error('Only ' + pulledQty + ' pcs were pulled.');
+  }
+
+  // Back to wherever it came from - sourceModel is recorded at pull time, so
+  // a part pulled from the Universal bucket goes back to Universal rather
+  // than quietly becoming this model's stock.
+  addToExtraPartInventory(
+    details.sourceModel || order.ModelName,
+    details.partName,
+    details.size || '',
+    qty,
+    {
+      poNumber: payload.poNumber,
+      actor: resolveActorName(payload.token),
+      reason: 'returned-from-bending',
+      note: 'Returned - pulled into this PO by mistake'
+    }
+  );
+
+  if (qty >= pulledQty) {
+    deleteRowsWhere('CuttingExtras', function (r) {
+      return String(r.PoNumber) === String(payload.poNumber) && String(r.ExtraId) === key;
+    });
+    delete completion[key];
+    delete partialMap[partialKey];
+    var completionMeta = parseJsonSafe(order.ExtraBendingCompletionMeta, {});
+    delete completionMeta[key];
+    var consumed = parseJsonSafe(order.BendingLeftoverConsumed, {});
+    delete consumed['extra:' + key];
+    var updates = {
+      ExtraBendingCompletion: JSON.stringify(completion),
+      ExtraBendingCompletionMeta: JSON.stringify(completionMeta),
+      BendingPartial: JSON.stringify(partialMap),
+      BendingLeftoverConsumed: JSON.stringify(consumed)
+    };
+    updates.BendingStatus = recomputeBendingStatus(order, getOrderActiveSheets(order), updates);
+    writeRowUpdates('Orders', order._rowIndex, updates);
+  } else {
+    details.qty = pulledQty - qty;
+    writeRowUpdates('CuttingExtras', extraRow._rowIndex, { Details: JSON.stringify(details) });
+  }
+
+  return getBendingQueueForOrder(payload.poNumber);
+}
+
 function setExtraBendingComplete(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {

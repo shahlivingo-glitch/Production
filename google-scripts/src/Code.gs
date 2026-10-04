@@ -111,6 +111,7 @@ var ACTION_MENUS = {
   addExtraToInventoryNow: ['bendingStage', 'edit'],
   moveEntryQtyToInventory: ['bendingStage', 'edit'],
   pullFromExtraInventory: ['bendingStage', 'edit'],
+  returnPullToInventory: ['bendingStage', 'edit'],
   markAllBendingComplete: ['bendingStage', 'edit'],
 
   // Assembly Stage
@@ -238,6 +239,7 @@ var POST_ACTIONS = {
   addExtraToInventoryNow: function (b) { return addExtraToInventoryNow(b); },
   moveEntryQtyToInventory: function (b) { return moveEntryQtyToInventory(b); },
   pullFromExtraInventory: function (b) { return pullFromExtraInventory(b); },
+  returnPullToInventory: function (b) { return returnPullToInventory(b); },
   markAllBendingComplete: function (b) { return markAllBendingComplete(b); },
   addAssemblyProgress: function (b) { return addAssemblyProgress(b); },
   markAssemblyComplete: function (b) { return markAssemblyComplete(b); },

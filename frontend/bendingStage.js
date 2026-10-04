@@ -880,6 +880,54 @@ function renderExtraBendingEntries() {
   });
 }
 
+// Puts a pulled part back in the Leftover Ledger. Mirrors the "Move to
+// Extra Inventory" control on a plan card - same shape, opposite direction -
+// and takes a qty so a pull that was only partly wrong can be partly undone.
+function buildReturnPullControl(entry) {
+  var wrap = document.createElement('div');
+  wrap.className = 'batch-bend-row';
+
+  var qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.min = '1';
+  qtyInput.max = String(entry.totalQty);
+  qtyInput.value = String(entry.totalQty);
+  qtyInput.style.maxWidth = '90px';
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-secondary';
+  btn.textContent = 'Return to Extra Inventory';
+  btn.addEventListener('click', function () {
+    var qty = Number(qtyInput.value);
+    if (!(qty > 0)) { showFatalError('Enter a quantity greater than zero.'); return; }
+    if (qty > entry.totalQty) {
+      showFatalError('Only ' + entry.totalQty + ' pcs were pulled.');
+      return;
+    }
+    if (!confirm('Return ' + qty + ' × ' + entry.partName + ' to Extra Part Inventory and take it off this PO?')) return;
+    btn.disabled = true;
+    apiPost('returnPullToInventory', {
+      poNumber: currentBendingQueue.poNumber,
+      extraKey: entry.extraKey,
+      qty: qty
+    }).then(function (result) {
+      if (!result.ok) { btn.disabled = false; return showFatalError(result.error); }
+      currentBendingQueue = result.data;
+      refreshBendingViews();
+    }).catch(function (err) { btn.disabled = false; showFatalError(err); });
+  });
+
+  var note = document.createElement('span');
+  note.className = 'bend-units-done';
+  note.textContent = 'pulled by mistake? put it back';
+
+  wrap.appendChild(qtyInput);
+  wrap.appendChild(btn);
+  wrap.appendChild(note);
+  return wrap;
+}
+
 function buildExtraBendingEntryCard(entry) {
   var card = document.createElement('div');
   card.className = 'cs-sheet-card' + (entry.done ? ' done' : '');
@@ -904,6 +952,13 @@ function buildExtraBendingEntryCard(entry) {
 
   var useInventoryBox = buildUseInventoryCheckbox(entry);
   if (useInventoryBox) card.appendChild(useInventoryBox);
+
+  // Undo for a pull that shouldn't have happened. Only while nothing of it
+  // is bent - once it is, it isn't flat stock any more and returning it
+  // would invent inventory that doesn't physically exist.
+  if (entry.isFromInventory && !entry.done && !entry.bentQty && canEdit('bendingStage')) {
+    card.appendChild(buildReturnPullControl(entry));
+  }
 
   // Second chance for whoever didn't check "Also add to Extra Part
   // Inventory" back in Cutting Stage's logging form - a one-time action,

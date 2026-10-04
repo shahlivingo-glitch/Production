@@ -54,10 +54,7 @@ function renderAssemblyDashboard() {
   if (pendingAssemblyOrders.length === 0) {
     var empty = document.createElement('div');
     empty.className = 'empty-state';
-    // Two different reasons for an empty list, and the operator can act on
-    // neither from here - so name both rather than leaving them wondering
-    // whether the page is broken.
-    empty.textContent = 'Nothing ready to assemble — every PO is either still in bending, or already fully assembled.';
+    empty.textContent = 'Nothing ready to assemble \u2014 no PO has a whole almirah\'s worth of parts bent and waiting.';
     list.appendChild(empty);
     return;
   }
@@ -70,13 +67,19 @@ function renderAssemblyDashboard() {
     var main = document.createElement('div');
     main.className = 'cs-po-card-main';
     main.innerHTML =
-      '<div class="cs-po-number">' + po.poNumber + ' — ' + po.modelName + '</div>' +
-      '<div class="muted">Qty ' + po.qty + ' · ' + new Date(po.createdAt).toLocaleDateString() +
-      (po.partyName ? ' · ' + po.partyName : '') + '</div>';
+      '<div class="cs-po-number">' + po.poNumber + ' \u2014 ' + po.modelName + '</div>' +
+      '<div class="muted">Qty ' + po.qty + ' \u00b7 ' + new Date(po.createdAt).toLocaleDateString() +
+      (po.partyName ? ' \u00b7 ' + po.partyName : '') + '</div>';
 
+    // The count that matters at a glance is what can be built today, not
+    // what the order totals - a part-bent PO belongs here on the strength
+    // of its finished batch.
     var progress = document.createElement('div');
     progress.className = 'cs-po-card-sheets';
-    progress.innerHTML = '<strong>' + po.assembledQty + ' / ' + po.qty + '</strong>assembled';
+    var stillBending = Math.max(0, po.qty - po.unitsBent);
+    progress.innerHTML = '<strong>' + po.readyNow + '</strong>ready now' +
+      (po.assembledQty ? ' <span class="muted">(' + po.assembledQty + ' built)</span>' : '') +
+      (stillBending > 0 ? ' <span class="cut-pending-inline">(' + stillBending + ' still bending)</span>' : '');
 
     card.appendChild(main);
     card.appendChild(progress);
@@ -132,10 +135,10 @@ function renderAssemblyPoSummary() {
   [
     ['Model', currentAssembly.modelName],
     ['Qty Ordered', currentAssembly.qty],
-    ['Date', new Date(currentAssembly.createdAt).toLocaleString()],
-    ['Party', currentAssembly.partyName || '—'],
-    ['Colour', currentAssembly.colourPlan || '—'],
-    ['Deadline', currentAssembly.deliveryDeadline || '—']
+    ['Bent So Far', currentAssembly.unitsBent + ' of ' + currentAssembly.qty],
+    ['Party', currentAssembly.partyName || '\u2014'],
+    ['Colour', currentAssembly.colourPlan || '\u2014'],
+    ['Deadline', currentAssembly.deliveryDeadline || '\u2014']
   ].forEach(function (f) {
     var block = document.createElement('div');
     block.className = 'field-block';
@@ -149,25 +152,39 @@ function renderAssemblyProgress() {
   host.innerHTML = '';
   var card = document.createElement('div');
   card.className = 'cs-sheet-card' + (currentAssembly.assemblyStatus === 'complete' ? ' done' : '');
-  // The headline number of the whole stage, so it is sized like one -
-  // readable across a workshop rather than tucked into a 12px meta line.
+
+  // Three numbers, in the order the assembler cares about them: what is
+  // built, what can be built now, and what bending still owes them.
+  var sub;
+  if (currentAssembly.remaining <= 0) {
+    sub = 'Nothing left to build \u2014 this PO is complete.';
+  } else if (currentAssembly.readyNow > 0) {
+    sub = currentAssembly.readyNow + ' ready to assemble now' +
+      (currentAssembly.stillBending > 0
+        ? ' \u00b7 ' + currentAssembly.stillBending + ' still waiting on bending'
+        : '');
+  } else {
+    sub = 'Nothing ready yet \u2014 bending has covered ' + currentAssembly.unitsBent +
+      ' of ' + currentAssembly.qty + ' almirahs.';
+  }
+
   card.innerHTML =
     '<div class="assembly-count"><strong>' + currentAssembly.assembledQty + '</strong>' +
     '<span>of ' + currentAssembly.qty + ' almirahs assembled</span></div>' +
-    '<div class="assembly-count-sub">' +
-    (currentAssembly.remaining > 0
-      ? currentAssembly.remaining + ' still to build'
-      : 'Nothing left to build — this PO is complete.') + '</div>';
+    '<div class="assembly-count-sub">' + sub + '</div>';
   host.appendChild(card);
 }
 
 // Partial entry: "I assembled 8 today". Additive, so the number typed is
 // what was just built - not a running total the operator has to work out.
 // Hidden once the PO is complete, since there is nothing left to add.
+// Partial entry: "I assembled 8 today". Additive, so the number typed is
+// what was just built - not a running total the operator has to work out.
+// Bounded by what there are bent parts for, not by the order quantity.
 function renderAssemblyPartialBar() {
   var host = el('assembly-partial-bar');
   host.innerHTML = '';
-  if (!canEdit('assembly') || currentAssembly.remaining <= 0) {
+  if (!canEdit('assembly') || currentAssembly.readyNow <= 0) {
     host.style.display = 'none';
     return;
   }
@@ -180,8 +197,8 @@ function renderAssemblyPartialBar() {
   var input = document.createElement('input');
   input.type = 'number';
   input.min = '1';
-  input.max = String(currentAssembly.remaining);
-  input.value = String(currentAssembly.remaining);
+  input.max = String(currentAssembly.readyNow);
+  input.value = String(currentAssembly.readyNow);
   input.className = 'bend-units-input';
   input.id = 'assembly-qty-input';
 
@@ -200,7 +217,7 @@ function renderAssemblyPartialBar() {
 
   var note = document.createElement('span');
   note.className = 'bend-units-done';
-  note.textContent = 'of ' + currentAssembly.remaining + ' remaining — adds to the ' +
+  note.textContent = 'of ' + currentAssembly.readyNow + ' ready \u2014 adds to the ' +
     currentAssembly.assembledQty + ' already recorded';
 
   host.appendChild(label);
@@ -266,9 +283,11 @@ function renderAssemblyLog() {
 function renderAssemblyActions() {
   var done = el('assemble-done-btn');
   if (canEdit('assembly')) {
-    done.style.display = currentAssembly.remaining > 0 ? '' : 'none';
-    done.textContent = currentAssembly.assembledQty > 0
-      ? 'Assemble Done (' + currentAssembly.remaining + ' left)'
+    // The button finishes what is BENT, not the whole order - a PO part-way
+    // through bending stays open for its next batch.
+    done.style.display = currentAssembly.readyNow > 0 ? '' : 'none';
+    done.textContent = (currentAssembly.readyNow < currentAssembly.remaining)
+      ? 'Assemble Done (' + currentAssembly.readyNow + ' ready)'
       : 'Assemble Done';
   }
   // Undo is admin-only and only worth showing once there is something to
@@ -306,7 +325,7 @@ function assembleDone() {
     alert('View only - ask an admin for edit access to record assembly.');
     return;
   }
-  if (!confirm('Mark all ' + currentAssembly.remaining + ' remaining almirah(s) for ' +
+  if (!confirm('Mark the ' + currentAssembly.readyNow + ' almirah(s) now bent for ' +
       currentAssembly.poNumber + ' as assembled?')) return;
 
   var btn = el('assemble-done-btn');
