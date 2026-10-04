@@ -491,6 +491,56 @@ bulk action, so bulk-complete only records completion.
 
 ### Bending ↔ Leftover Ledger (moving stock both ways)
 
+### Bending batches and what "done" means
+
+`Orders.BendingBatchQty` is how many almirahs the bender is working
+through right now (defaults to the whole order). It rescales what each
+part card **asks for** — `perUnit × batch` — and records no bending by
+itself.
+
+What a tick records depends on whether a batch is active:
+
+- **Batch = the whole order** (the default): ticking a part means all of
+  it, as it always did.
+- **Batch < the order**: ticking books *that batch's pieces* into
+  `Orders.BendingPartial`, accumulates across batches, and only flips the
+  `BendingCompletion` boolean when the cumulative count covers everything
+  produced. The control renders as a **button** there, not a checkbox — a
+  checkbox would have to un-tick itself after every batch, which reads as
+  the click not having worked. `clearBendingPartial` zeroes a mis-click.
+
+This was a real bug, not a hypothetical: the batch control shipped
+rescaling the display only, so a 20-of-50 batch could tick every card and
+close the PO out for bending with 60% of the work still to do — and
+Assembly opens on that signal. Live PO-0001 was in that state.
+
+A part cut on **two different sheets** has the batch need *allocated*
+across its cards (`allocateBatchNeeds`), not repeated on each — repeating
+it read as twice the real requirement. The cards always sum to
+`perUnit × batch`, and a card the earlier ones already cover shows "none
+this batch".
+
+**`BendingStatus` is complete only when every plan card AND every extra
+task is ticked** (`recomputeBendingStatus`). Three things that look like
+cards but can never be ticked are excluded, because each one would
+otherwise strand a PO in bending forever:
+
+- an entry whose whole qty was banked to the Leftover Ledger (its card is
+  gone),
+- a plan output that produces nothing (a blank qty on a sheet — PO-0001
+  has one),
+- …and extras, which used to be left out of the status entirely, letting
+  a PO report complete with extra parts still unbent.
+
+**Un-cutting a sheet in Cutting clears any bending recorded against its
+parts** (`setSheetComplete`). Without that the cards went back to locked
+but stayed ticked, `BendingStatus` stayed complete, and the PO stayed
+eligible for Assembly off a sheet Cutting now said was never cut.
+
+`unitsBent` (whole almirahs the bending adds up to, weakest part wins)
+counts plan entries, **extras, and force-bent pieces** — a BACK bent off
+an extra sheet covers an almirah exactly as one off the plan does.
+
 Beyond *consuming* leftover stock above, Bending Stage moves parts in and
 out of `ExtraPartInventory` explicitly. All of it is in `Bending.gs`:
 
@@ -661,6 +711,15 @@ outputs with different sizes still aggregate, but list every distinct size.
 
 Timing metadata only exists from when `*CompletionMeta` shipped, so older
 completions legitimately show no actor/timestamp.
+
+**Never compute a plan entry's produced qty as `entry.qty × sheets`.** On
+a multi-yield output `qty` is the *per-almirah requirement* and
+`yieldPerSheet` is what one sheet actually yields — different numbers.
+`computeOrderSheetPlan` already works the real figure out per row; read it
+through `producedQtyForEntry(sheetPlan, entry)` (MultiYield.gs). Bending,
+PO History and `moveEntryQtyToInventory` all got this wrong once: a part
+with 12 produced read as 3, inventing a 9-piece shortage and a −9
+variance while Cutting reported it correct.
 
 ## Performance notes
 
