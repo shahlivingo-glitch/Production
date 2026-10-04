@@ -982,6 +982,14 @@ a { color: var(--color-accent); }
   overflow-y: auto;
 }
 
+/* Partial bending progress on an entry that is started but not finished.
+   Amber rather than red: it is work in hand, not a problem. */
+.bend-progress {
+  color: var(--color-warning-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .cut-pending-inline {
   color: var(--color-destructive);
   font-weight: 600;

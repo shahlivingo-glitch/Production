@@ -402,6 +402,84 @@ function buildUseInventoryCheckbox(entry) {
 // count. For an extra-derived entry the two are already equal (a logged
 // extra has no separate per-sheet rate), so the "(N/sheet)" detail only
 // shows when it's actually informative.
+// "50 bent, 98 left" - shown only once some progress exists, so a fresh
+// entry stays as clean as it was before partial bending existed.
+function formatBendingProgress(entry) {
+  var bent = Number(entry.bentQty) || 0;
+  if (!bent || entry.done) return '';
+  var left = Math.max(0, (Number(entry.totalQty) || 0) - bent);
+  return ' <span class="bend-progress">' + bent + ' bent, ' + left + ' left</span>';
+}
+
+// Lets a bender record part of an entry without claiming the whole thing.
+// Pre-filled with everything still outstanding, so the common "I finished
+// it" case is one click and the partial case is one edit.
+function buildPartialBendControl(entry) {
+  if (entry.done || !entry.unlocked) return null;
+  var remaining = (Number(entry.totalQty) || 0) - (Number(entry.bentQty) || 0);
+  if (!(remaining > 0)) return null;
+
+  var wrap = document.createElement('div');
+  wrap.className = 'field-row bend-partial-row';
+  wrap.style.flexDirection = 'row';
+  wrap.style.alignItems = 'center';
+  wrap.style.flexWrap = 'wrap';
+  wrap.style.gap = '8px';
+  wrap.style.marginTop = 'var(--space-3)';
+  wrap.style.marginBottom = '0';
+
+  var qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.min = '1';
+  qtyInput.max = String(remaining);
+  qtyInput.value = String(remaining);
+  qtyInput.style.maxWidth = '90px';
+  qtyInput.disabled = !canEdit('bendingStage');
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-secondary';
+  btn.textContent = 'Bend';
+  btn.title = 'Record how many of these you have bent';
+  btn.disabled = !canEdit('bendingStage');
+  btn.addEventListener('click', function () {
+    var qty = Number(qtyInput.value);
+    if (!(qty > 0)) { showFatalError('Enter a quantity greater than zero.'); return; }
+    addBendingProgress(entry, qty, btn);
+  });
+
+  var hint = document.createElement('span');
+  hint.className = 'still-to-cut-none';
+  hint.textContent = remaining + ' left';
+
+  wrap.appendChild(qtyInput);
+  wrap.appendChild(btn);
+  wrap.appendChild(hint);
+  return wrap;
+}
+
+function addBendingProgress(entry, qty, btn) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to mark parts bent.');
+    return;
+  }
+  btn.disabled = true;
+  var payload = { poNumber: currentBendingQueue.poNumber, qty: qty };
+  if (entry.extraKey) payload.extraKey = entry.extraKey;
+  else payload.entryIndex = entry.index;
+
+  apiPost('addBendingProgress', payload).then(function (result) {
+    if (!result.ok) { btn.disabled = false; showFatalError(result.error); return; }
+    currentBendingQueue = result.data;
+    renderBendingStatusPill();
+    renderBendingEntries();
+    renderExtraBendingEntries();
+  }).catch(function (err) {
+    btn.disabled = false;
+    showFatalError(err);
+  });
+}
+
 function formatBendingQtyText(entry) {
   var total = entry.totalQty !== undefined ? entry.totalQty : entry.qty;
   if (total !== entry.qty) {
@@ -424,7 +502,7 @@ function buildBendingEntryCard(entry) {
 
   var text = document.createElement('span');
   var sizeTag = entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '';
-  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + formatBendingQtyText(entry) + ' <span class="muted">— from ' + entry.sheetLabel + '</span>';
+  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + formatBendingQtyText(entry) + ' <span class="muted">— from ' + entry.sheetLabel + '</span>' + formatBendingProgress(entry);
 
   label.appendChild(checkbox);
   label.appendChild(text);
@@ -441,6 +519,9 @@ function buildBendingEntryCard(entry) {
 
   var useInventoryBox = buildUseInventoryCheckbox(entry);
   if (useInventoryBox) card.appendChild(useInventoryBox);
+
+  var bendControl = buildPartialBendControl(entry);
+  if (bendControl) card.appendChild(bendControl);
 
   var moveControl = buildMoveToInventoryControl(entry);
   if (moveControl) card.appendChild(moveControl);
@@ -587,7 +668,7 @@ function buildExtraBendingEntryCard(entry) {
   var sizeTag = entry.isFromInventory
     ? ' [from Extra Inventory]'
     : (entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '');
-  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + formatBendingQtyText(entry) + ' <span class="muted">— ' + entry.sheetLabel + '</span>';
+  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + formatBendingQtyText(entry) + ' <span class="muted">— ' + entry.sheetLabel + '</span>' + formatBendingProgress(entry);
 
   label.appendChild(checkbox);
   label.appendChild(text);
@@ -595,6 +676,9 @@ function buildExtraBendingEntryCard(entry) {
 
   var useInventoryBox = buildUseInventoryCheckbox(entry);
   if (useInventoryBox) card.appendChild(useInventoryBox);
+
+  var bendControl = buildPartialBendControl(entry);
+  if (bendControl) card.appendChild(bendControl);
 
   // Second chance for whoever didn't check "Also add to Extra Part
   // Inventory" back in Cutting Stage's logging form - a one-time action,

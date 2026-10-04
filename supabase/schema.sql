@@ -137,6 +137,11 @@ create table if not exists orders (
   bending_completion_meta       jsonb       not null default '{}'::jsonb,
   extra_bending_completion_meta jsonb       not null default '{}'::jsonb,
 
+  -- Partial bending progress, namespaced in one map: a plain index for a
+  -- plan entry, "extra:<extraKey>" for an extra. bending_completion stays
+  -- the source of truth for "done"; this is progress toward it.
+  bending_partial               jsonb       not null default '{}'::jsonb,
+
   updated_at                    timestamptz not null default now(),
   last_edited_in_sheet          timestamptz
 );

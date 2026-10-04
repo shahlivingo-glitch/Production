@@ -37,6 +37,7 @@ function sheetLabelForBending(sheet, sheetIndex) {
 // logged as an extra.
 function getExtraBendingEntries(poNumber, order) {
   var completion = parseJsonSafe(order.ExtraBendingCompletion, {});
+  var partialMap = parseJsonSafe(order.BendingPartial, {});
   var entries = [];
   listCuttingExtras(poNumber).forEach(function (r) {
     var d = r.details || {};
@@ -63,6 +64,7 @@ function getExtraBendingEntries(poNumber, order) {
         sheetLabel: 'Pulled from Extra Inventory',
         unlocked: true,
         done: done,
+        bentQty: Number(partialMap['extra:' + key]) || 0,
         leftoverAvailable: 0,
         alreadyInInventory: true
       });
@@ -84,6 +86,7 @@ function getExtraBendingEntries(poNumber, order) {
         sheetLabel: d.sourceSheetLabel || 'Extra part',
         unlocked: true,
         done: done,
+        bentQty: Number(partialMap['extra:' + key]) || 0,
         leftoverAvailable: done ? 0 : getExtraPartInventoryQty(inventoryModel, d.partName, d.size || ''),
         alreadyInInventory: !!addedMap.main
       });
@@ -104,6 +107,7 @@ function getExtraBendingEntries(poNumber, order) {
           sheetLabel: 'Extra Sheet Cut',
           unlocked: true,
           done: done,
+          bentQty: Number(partialMap['extra:' + key]) || 0,
           leftoverAvailable: done ? 0 : getExtraPartInventoryQty(order.ModelName, partName, ''),
           alreadyInInventory: !!addedMap[partName]
         });
@@ -192,6 +196,7 @@ function getBendingQueueForOrder(poNumber) {
   );
 
   var planEntryMoves = parseJsonSafe(order.PlanEntryInventoryMoves, {});
+  var bendingPartial = parseJsonSafe(order.BendingPartial, {});
 
   // Any plan entry (a required part or a plan-level "extra" output alike)
   // can have some or all of its produced qty manually moved to the Leftover
@@ -223,6 +228,7 @@ function getBendingQueueForOrder(poNumber) {
       size: entry.size,
       unlocked: !!sheetCompletion[entry.sheetIndex],
       done: !!bendingCompletion[index],
+      bentQty: Number(bendingPartial[String(index)]) || 0,
       leftoverAvailable: leftoverAvailable
     };
   }).filter(function (entry) {
@@ -278,6 +284,91 @@ function consumeBendingLeftoverIfRequested(row, entry, idx, wasDone, useFromInve
   consumedMap[String(idx)] = true;
 }
 
+// Partial bending progress lives in ONE namespaced map, Orders.BendingPartial:
+// a plain index ("3") for a plan entry, "extra:<extraKey>" for an extra -
+// the same namespacing BendingLeftoverConsumed already uses, rather than a
+// second column that would need its own migration and its own bugs.
+//
+// BendingCompletion stays the single source of truth for "done". The partial
+// count is progress toward that, and crossing the entry's full qty is what
+// flips it - so nothing downstream (BendingStatus, the PO History report,
+// listPendingBendingOrders) has to learn a new notion of completeness.
+function bendingPartialKey(entryIndex, extraKey) {
+  return extraKey ? ('extra:' + extraKey) : String(entryIndex);
+}
+
+function getBendingPartial(row, entryIndex, extraKey) {
+  var map = parseJsonSafe(row.BendingPartial, {});
+  return Number(map[bendingPartialKey(entryIndex, extraKey)]) || 0;
+}
+
+// Records that `qty` more pieces of one entry have been bent. Caps at the
+// entry's outstanding total rather than rejecting an overshoot: a bender
+// typing 100 when 98 remain means "I finished it", and failing that would
+// be pedantry at the machine.
+function addBendingProgress(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var qty = Number(payload.qty);
+  if (!(qty > 0)) {
+    throw new Error('Enter a quantity greater than zero.');
+  }
+
+  var extraKey = payload.extraKey ? String(payload.extraKey) : '';
+  var idx = extraKey ? -1 : Number(payload.entryIndex);
+  var queue = getBendingQueueForOrder(payload.poNumber);
+  var entry = null;
+
+  if (extraKey) {
+    (queue.extraEntries || []).forEach(function (e) { if (e.extraKey === extraKey) entry = e; });
+  } else {
+    (queue.entries || []).forEach(function (e) { if (e.index === idx) entry = e; });
+  }
+  if (!entry) {
+    throw new Error('Bending entry not found');
+  }
+  if (entry.done) {
+    throw new Error('This part is already marked fully bent.');
+  }
+  if (!entry.unlocked) {
+    throw new Error('That part\'s sheet has not been marked complete in Cutting yet');
+  }
+
+  var total = Number(entry.totalQty) || 0;
+  var already = Number(entry.bentQty) || 0;
+  if (total <= 0) {
+    throw new Error('Nothing to bend for this part.');
+  }
+  var next = Math.min(total, already + qty);
+
+  var partial = parseJsonSafe(row.BendingPartial, {});
+  partial[bendingPartialKey(idx, extraKey)] = next;
+
+  var updates = { BendingPartial: JSON.stringify(partial) };
+
+  // Reaching the full qty IS completion - routed through the normal
+  // complete path so leftover consumption, the completion stamp and the
+  // status recompute all behave exactly as they do for a single click.
+  if (next >= total) {
+    writeRowUpdates('Orders', row._rowIndex, updates);
+    if (extraKey) {
+      return setExtraBendingComplete({
+        poNumber: payload.poNumber, extraKey: extraKey,
+        completed: true, token: payload.token
+      });
+    }
+    return setBendingComplete({
+      poNumber: payload.poNumber, entryIndex: idx,
+      completed: true, token: payload.token
+    });
+  }
+
+  writeRowUpdates('Orders', row._rowIndex, updates);
+  return getBendingQueueForOrder(payload.poNumber);
+}
+
 function setBendingComplete(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
@@ -316,9 +407,16 @@ function setBendingComplete(payload) {
     delete completionMeta[String(idx)];
   }
 
+  // The boolean supersedes the partial count either way: once done, "all of
+  // it" is implied; once un-done, progress is back to zero. Either way a
+  // leftover count would be wrong, so it is cleared in both cases.
+  var partial = parseJsonSafe(row.BendingPartial, {});
+  delete partial[bendingPartialKey(idx, '')];
+
   var updates = {
     BendingCompletion: JSON.stringify(completion),
     BendingCompletionMeta: JSON.stringify(completionMeta),
+    BendingPartial: JSON.stringify(partial),
     BendingStatus: computeBendingStatus(completion, flat.length)
   };
   if (payload.completed) {
@@ -401,9 +499,13 @@ function moveEntryQtyToInventory(payload) {
 
   var moves = parseJsonSafe(row.PlanEntryInventoryMoves, {});
   var alreadyMoved = Number(moves[idx]) || 0;
-  var remaining = rawTotalQty - alreadyMoved;
+  // Pieces already bent are spoken for - no longer flat stock, so they
+  // cannot be banked as surplus and come off what is movable.
+  var alreadyBent = getBendingPartial(row, idx, '');
+  var remaining = rawTotalQty - alreadyMoved - alreadyBent;
   if (qtyToMove > remaining) {
-    throw new Error('Only ' + remaining + ' pcs left to move.');
+    throw new Error('Only ' + Math.max(0, remaining) + ' pcs left to move'
+      + (alreadyBent ? ' (' + alreadyBent + ' already bent).' : '.'));
   }
 
   addToExtraPartInventory(row.ModelName, entry.partName, entry.size || '', qtyToMove, {
@@ -484,9 +586,15 @@ function setExtraBendingComplete(payload) {
     delete completionMeta[key];
   }
 
+  // The boolean supersedes any partial count in both directions - same
+  // reasoning as the clear in setBendingComplete.
+  var partial = parseJsonSafe(row.BendingPartial, {});
+  delete partial[bendingPartialKey(-1, key)];
+
   var updates = {
     ExtraBendingCompletion: JSON.stringify(completion),
-    ExtraBendingCompletionMeta: JSON.stringify(completionMeta)
+    ExtraBendingCompletionMeta: JSON.stringify(completionMeta),
+    BendingPartial: JSON.stringify(partial)
   };
 
   // Shares BendingLeftoverConsumed with the plan-entry path (setBendingComplete)
@@ -557,7 +665,9 @@ function markAllBendingComplete(payload) {
     extraCompletion[e.extraKey] = true;
   });
 
+  // Everything reachable is now fully bent, so no partial counts survive.
   writeRowUpdates('Orders', row._rowIndex, {
+    BendingPartial: JSON.stringify({}),
     BendingCompletion: JSON.stringify(completion),
     BendingCompletionMeta: JSON.stringify(completionMeta),
     BendingStatus: computeBendingStatus(completion, flat.length),

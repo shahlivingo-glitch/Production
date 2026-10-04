@@ -111,7 +111,8 @@ var SUPABASE_TABLES = {
       PlanEntryInventoryMoves: ['plan_entry_inventory_moves', 'json'],
       SheetCompletionMeta: ['sheet_completion_meta', 'json'],
       BendingCompletionMeta: ['bending_completion_meta', 'json'],
-      ExtraBendingCompletionMeta: ['extra_bending_completion_meta', 'json']
+      ExtraBendingCompletionMeta: ['extra_bending_completion_meta', 'json'],
+      BendingPartial: ['bending_partial', 'json']
     }
   },
   CuttingExtras: {
