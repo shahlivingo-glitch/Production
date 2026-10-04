@@ -149,12 +149,15 @@ function renderAssemblyProgress() {
   host.innerHTML = '';
   var card = document.createElement('div');
   card.className = 'cs-sheet-card' + (currentAssembly.assemblyStatus === 'complete' ? ' done' : '');
+  // The headline number of the whole stage, so it is sized like one -
+  // readable across a workshop rather than tucked into a 12px meta line.
   card.innerHTML =
-    '<div class="cs-sheet-total-line"><strong>' + currentAssembly.assembledQty + '</strong> of ' +
-    currentAssembly.qty + ' almirahs assembled' +
+    '<div class="assembly-count"><strong>' + currentAssembly.assembledQty + '</strong>' +
+    '<span>of ' + currentAssembly.qty + ' almirahs assembled</span></div>' +
+    '<div class="assembly-count-sub">' +
     (currentAssembly.remaining > 0
-      ? ' <span class="muted">— ' + currentAssembly.remaining + ' still to build</span>'
-      : ' <span class="bend-progress">PO complete</span>') + '</div>';
+      ? currentAssembly.remaining + ' still to build'
+      : 'Nothing left to build — this PO is complete.') + '</div>';
   host.appendChild(card);
 }
 

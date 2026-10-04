@@ -1015,6 +1015,32 @@ a { color: var(--color-accent); }
   margin-left: auto;
 }
 
+/* Assembly's one number. Everything else on that page is context for it. */
+.assembly-count {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 15px;
+  color: var(--color-muted-foreground);
+}
+
+.assembly-count strong {
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: var(--color-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.cs-sheet-card.done .assembly-count strong { color: var(--color-success-text); }
+
+.assembly-count-sub {
+  margin-top: var(--space-1);
+  font-size: 13px;
+  color: var(--color-subtle-foreground);
+}
+
 .bend-units-bar {
   display: flex;
   align-items: center;
