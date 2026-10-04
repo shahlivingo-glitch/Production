@@ -588,49 +588,93 @@ function buildUseInventoryCheckbox(entry) {
 // "50 bent, 98 left" - shown only once some progress exists, so a fresh
 // entry stays as clean as it was before partial bending existed.
 function formatBendingProgress(entry) {
-  // A finished entry counts as all of it - the partial count is cleared once
-  // the checkbox takes over, so reading bentQty alone would show nothing.
-  var bent = entry.done ? (Number(entry.totalQty) || 0) : (Number(entry.bentQty) || 0);
+  var total = Number(entry.totalQty) || 0;
+  if (entry.done) {
+    return total ? ' <span class="bend-progress">all ' + total + ' bent</span>' : '';
+  }
+  var bent = Number(entry.bentQty) || 0;
   if (!bent) return '';
-  return ' <span class="bend-progress">' + bent + ' already bent</span>';
+  // "40 of 100 bent" rather than "40 already bent": during a batch the two
+  // numbers are what the bender is deciding between, and a bare count next
+  // to a different batch figure is exactly what read as wrong before.
+  return ' <span class="bend-progress">' + bent + ' of ' + total + ' bent</span>';
 }
 
 function formatBendingQtyText(entry) {
   var total = entry.totalQty !== undefined ? entry.totalQty : entry.qty;
+  // perSheetYield, not qty: on a multi-yield output qty is the per-almirah
+  // requirement and the sheet yields something else entirely.
+  var perSheet = entry.perSheetYield !== undefined && entry.perSheetYield !== null
+    ? entry.perSheetYield : entry.qty;
 
   // With a per-unit figure the card leads with what the current batch needs,
   // and keeps the produced count beside it - the bender needs both: how many
   // to bend now, and whether that many even exist yet.
   if (entry.batchNeed !== null && entry.batchNeed !== undefined) {
     return entry.batchNeed + ' <span class="muted">(' + total + ' cut'
-      + (entry.qty ? ', ' + entry.qty + '/sheet' : '') + ')</span>';
+      + (perSheet ? ', ' + perSheet + '/sheet' : '') + ')</span>';
   }
-  if (total !== entry.qty) {
-    return total + ' <span class="muted">(' + entry.qty + '/sheet)</span>';
+  if (total !== perSheet) {
+    return total + ' <span class="muted">(' + perSheet + '/sheet)</span>';
   }
   return String(total);
 }
 
 
+// True when the bender is working through fewer almirahs than the PO is
+// for, AND this card's share of that batch is less than everything that was
+// produced. Only then does "done" need to mean something other than "all of
+// it" - which is the distinction that was missing.
+function entryIsPartialBatch(entry) {
+  return !entry.done &&
+    currentBendingQueue.batchQty > 0 &&
+    currentBendingQueue.batchQty < (Number(currentBendingQueue.qty) || 0) &&
+    entry.batchNeed !== null && entry.batchNeed !== undefined &&
+    entry.batchNeed > 0 &&
+    entry.batchNeed < (Number(entry.totalQty) || 0);
+}
+
+function bendingEntryLabelText(entry) {
+  // A plan output saved with no part name still produces a card. It cannot
+  // be identified from the name, so fall back to its size - an unlabelled
+  // card nobody can act on is worse than an awkward one.
+  var name = String(entry.partName || '').trim();
+  if (!name) {
+    return '<em class="muted">Unnamed output' + (entry.size ? ' (' + entry.size + ')' : '') + '</em>';
+  }
+  var sizeTag = entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '';
+  return '<strong>' + name + sizeTag + '</strong>';
+}
+
+function refreshBendingViews() {
+  renderBendingStatusPill();
+  renderBendUnitsBar();
+  renderBendingEntries();
+  renderExtraBendingEntries();
+}
+
 function buildBendingEntryCard(entry) {
   var card = document.createElement('div');
   card.className = 'cs-sheet-card' + (entry.done ? ' done' : '');
+  var partial = entryIsPartialBatch(entry);
 
-  var label = document.createElement('label');
-  label.className = 'cs-sheet-done-label';
+  var head = document.createElement(partial ? 'div' : 'label');
+  head.className = 'cs-sheet-done-label';
 
-  var checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = entry.done;
-  checkbox.disabled = !entry.unlocked || !canEdit('bendingStage');
+  var checkbox = null;
+  if (!partial) {
+    checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = entry.done;
+    checkbox.disabled = !entry.unlocked || !canEdit('bendingStage');
+    head.appendChild(checkbox);
+  }
 
   var text = document.createElement('span');
-  var sizeTag = entry.isExtra ? ' [extra' + (entry.size ? ', ' + entry.size : '') + ']' : '';
-  text.innerHTML = '<strong>' + entry.partName + sizeTag + '</strong> × ' + formatBendingQtyText(entry) + ' <span class="muted">— from ' + entry.sheetLabel + '</span>' + formatBendingProgress(entry);
-
-  label.appendChild(checkbox);
-  label.appendChild(text);
-  card.appendChild(label);
+  text.innerHTML = bendingEntryLabelText(entry) + ' × ' + formatBendingQtyText(entry) +
+    ' <span class="muted">— from ' + entry.sheetLabel + '</span>' + formatBendingProgress(entry);
+  head.appendChild(text);
+  card.appendChild(head);
 
   if (!entry.unlocked) {
     var banner = document.createElement('div');
@@ -644,15 +688,71 @@ function buildBendingEntryCard(entry) {
   var useInventoryBox = buildUseInventoryCheckbox(entry);
   if (useInventoryBox) card.appendChild(useInventoryBox);
 
+  // In batch mode the control is a button, not a checkbox: clicking it books
+  // this batch's pieces and the card stays open until the cumulative count
+  // covers everything produced. A checkbox would have to un-tick itself
+  // after each batch, which reads as the click not having worked.
+  if (partial && entry.unlocked && canEdit('bendingStage')) {
+    card.appendChild(buildBatchBendControl(entry, useInventoryBox));
+  }
+
   var moveControl = buildMoveToInventoryControl(entry);
   if (moveControl) card.appendChild(moveControl);
 
-  checkbox.addEventListener('change', function (e) {
-    var useFromInventory = !!(useInventoryBox && useInventoryBox._checkbox.checked);
-    toggleBendingEntry(entry.index, e.target.checked, useFromInventory);
-  });
+  if (checkbox) {
+    checkbox.addEventListener('change', function (e) {
+      var useFromInventory = !!(useInventoryBox && useInventoryBox._checkbox.checked);
+      toggleBendingEntry(entry.index, e.target.checked, useFromInventory);
+    });
+  }
 
   return card;
+}
+
+function buildBatchBendControl(entry, useInventoryBox) {
+  var wrap = document.createElement('div');
+  wrap.className = 'batch-bend-row';
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-primary';
+  btn.textContent = 'Bent this batch (' + entry.batchNeed + ')';
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    var useFromInventory = !!(useInventoryBox && useInventoryBox._checkbox.checked);
+    toggleBendingEntry(entry.index, true, useFromInventory);
+  });
+  wrap.appendChild(btn);
+
+  var note = document.createElement('span');
+  note.className = 'bend-units-done';
+  var bent = Number(entry.bentQty) || 0;
+  note.textContent = bent
+    ? (bent + ' of ' + entry.totalQty + ' recorded — ' + (entry.totalQty - bent) + ' to go')
+    : ('of ' + entry.totalQty + ' produced — the rest stays open for the next batch');
+  wrap.appendChild(note);
+
+  if (bent > 0) {
+    var undo = document.createElement('button');
+    undo.type = 'button';
+    undo.className = 'btn-secondary';
+    undo.textContent = 'Clear';
+    undo.title = 'Reset this part\'s recorded progress to zero';
+    undo.addEventListener('click', function () {
+      if (!confirm('Clear the ' + bent + ' recorded as bent for this part?')) return;
+      undo.disabled = true;
+      apiPost('clearBendingPartial', {
+        poNumber: currentBendingQueue.poNumber,
+        entryIndex: entry.index
+      }).then(function (result) {
+        if (!result.ok) { undo.disabled = false; return showFatalError(result.error); }
+        currentBendingQueue = result.data;
+        refreshBendingViews();
+      }).catch(function (err) { undo.disabled = false; showFatalError(err); });
+    });
+    wrap.appendChild(undo);
+  }
+  return wrap;
 }
 
 // Every plan entry - required part or plan-level "extra" output alike - can
@@ -743,8 +843,9 @@ function toggleBendingEntry(entryIndex, completed, useFromInventory) {
       return;
     }
     currentBendingQueue = result.data;
-    renderBendingStatusPill();
-    renderBendingEntries();
+    // Full repaint: a batch tick can change the status pill, this card's
+    // progress, the shortfall cards and the extras list all at once.
+    refreshBendingViews();
   }).catch(function (err) {
     showFatalError(err);
     renderBendingEntries();

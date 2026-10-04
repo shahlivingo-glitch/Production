@@ -104,6 +104,7 @@ var ACTION_MENUS = {
   pendingBendingOrders: ['bendingStage', 'view'],
   bendingQueueForOrder: ['bendingStage', 'view'],
   setBendingComplete: ['bendingStage', 'edit'],
+  clearBendingPartial: ['bendingStage', 'edit'],
   setBendingBatchQty: ['bendingStage', 'edit'],
   forceBendShortfall: ['bendingStage', 'edit'],
   setExtraBendingComplete: ['bendingStage', 'edit'],
@@ -226,6 +227,7 @@ var POST_ACTIONS = {
   setActivePlanVersionForOrder: function (b) { return setActivePlanVersionForOrder(b); },
   addCuttingExtra: function (b) { return addCuttingExtra(b); },
   setBendingComplete: function (b) { return setBendingComplete(b); },
+  clearBendingPartial: function (b) { return clearBendingPartial(b); },
   setBendingBatchQty: function (b) { return setBendingBatchQty(b); },
   forceBendShortfall: function (b) { return forceBendShortfall(b); },
   // admin-only, enforced by requireAdmin inside - deliberately absent

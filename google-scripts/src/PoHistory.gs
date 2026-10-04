@@ -72,14 +72,20 @@ function buildCuttingPlanVsActual(order, sheets) {
     // figure that other sheets, extra cuts and inventory pulls also feed, so
     // comparing it against one sheet's yield reads as a shortfall that isn't
     // real. That comparison lives in buildPartTotals instead.
-    var parts = (sheet.outputs || []).map(function (output) {
-      var perSheet = Number(output.qty) || 0;
+    var parts = (sheet.outputs || []).map(function (output, outputIndex) {
+      // For a multi-yield output the per-sheet figure is yieldPerSheet, not
+      // qty - qty there is the per-almirah requirement. Reading qty as the
+      // yield understates every multi-yield part and invents a variance.
+      var row = (actual.rows || [])[outputIndex] || {};
+      var perSheet = Number(row.yieldPerSheet) || Number(output.qty) || 0;
       return {
         partName: output.partName || '',
         size: output.size || '',
         isExtra: !!output.isExtra,
         perSheet: perSheet,
-        actualTotal: perSheet * actualSheets
+        actualTotal: (row.produced !== undefined && row.produced !== null)
+          ? (Number(row.produced) || 0)
+          : (perSheet * actualSheets)
       };
     });
 
@@ -222,8 +228,7 @@ function buildBendingPlanVsActual(order, sheets) {
   var moves = parseJsonSafe(order.PlanEntryInventoryMoves, {});
 
   return flattenPlanOutputs(sheets).map(function (entry, index) {
-    var physical = (sheetPlan[entry.sheetIndex] && sheetPlan[entry.sheetIndex].physicalSheets) || 0;
-    var producedQty = entry.qty * physical;
+    var producedQty = producedQtyForEntry(sheetPlan, entry);
     var movedQty = Number(moves[index]) || 0;
     var meta = bendingMeta[String(index)] || null;
     var done = !!bendingCompletion[index];

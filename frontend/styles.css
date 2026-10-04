@@ -1041,6 +1041,17 @@ a { color: var(--color-accent); }
   color: var(--color-subtle-foreground);
 }
 
+/* The batch control on a part card. It sits where the "move to inventory"
+   row does, so a card reads top-to-bottom: what it is, what to do, what to
+   bank. */
+.batch-bend-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
 .bend-units-bar {
   display: flex;
   align-items: center;

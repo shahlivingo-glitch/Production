@@ -187,7 +187,7 @@ function buildStillToCut(order, entries, extraEntries) {
 // only nine cabinets. Only parts the plan actually cuts are counted - a
 // part no sheet produces (PO-0001 never cuts LEG) would otherwise peg this
 // at zero forever and tell the bender nothing.
-function computeUnitsBent(order, entries) {
+function computeUnitsBent(order, entries, extraEntries) {
   var modelParts = {};
   try {
     modelParts = getModelParts(order.ModelName).partsPerUnit || {};
@@ -196,13 +196,30 @@ function computeUnitsBent(order, entries) {
   }
 
   var bentByPart = {};
-  entries.forEach(function (e) {
-    var key = String(e.partName || '').trim();
+  function addBent(partName, qty) {
+    var key = String(partName || '').trim();
     if (!key) return;
+    bentByPart[key] = (bentByPart[key] || 0) + (Number(qty) || 0);
+  }
+  entries.forEach(function (e) {
     // A finished entry counts as all of it; the partial count is cleared
     // once the boolean takes over.
-    var bent = e.done ? (Number(e.totalQty) || 0) : (Number(e.bentQty) || 0);
-    bentByPart[key] = (bentByPart[key] || 0) + bent;
+    addBent(e.partName, e.done ? e.totalQty : e.bentQty);
+  });
+
+  // Extras that have been bent are bent pieces like any other - a BACK bent
+  // off an extra sheet covers an almirah exactly as one off the plan does.
+  // Leaving them out pegged this at the plan's count alone, which on a PO
+  // topped up from extras reads far below what is really built.
+  (extraEntries || []).forEach(function (e) {
+    addBent(e.partName, e.done ? e.totalQty : e.bentQty);
+  });
+
+  // Same for pieces declared bent that were never cut here: the whole point
+  // of the override is that they exist.
+  var forced = parseJsonSafe(order.ForceBentParts, {});
+  Object.keys(forced).forEach(function (partName) {
+    addBent(partName, (forced[partName] && forced[partName].qty) || 0);
   });
 
   var units = null;
@@ -216,21 +233,42 @@ function computeUnitsBent(order, entries) {
   return units === null ? 0 : units;
 }
 
-function getBendingQueueForOrder(poNumber) {
-  var order = findRowById('Orders', 'PoNumber', poNumber);
-  if (!order) {
-    throw new Error('PO not found: ' + poNumber);
-  }
-  var sheets = getOrderActiveSheets(order);
+// The per-part figure each card shows for the current batch, spread across
+// however many cards produce that part. A part cut on two different sheets
+// used to show the WHOLE order's need on BOTH cards - read literally that is
+// twice the real requirement. The need is allocated across them in order
+// instead, so the cards still sum to exactly perUnit x batch.
+function allocateBatchNeeds(entries, perUnitByPart, batchQty) {
+  var byPart = {};
+  entries.forEach(function (e) {
+    var key = String(e.partName || '').trim();
+    if (!perUnitByPart[key]) return;
+    if (!byPart[key]) byPart[key] = [];
+    byPart[key].push(e);
+  });
+  Object.keys(byPart).forEach(function (key) {
+    var list = byPart[key];
+    var remaining = perUnitByPart[key] * batchQty;
+    list.forEach(function (e, i) {
+      // The last card carries whatever is left, so the allocation never
+      // quietly loses pieces when the earlier cards cannot cover the need.
+      if (i === list.length - 1) {
+        e.batchNeed = Math.max(0, remaining);
+        return;
+      }
+      var take = Math.min(remaining, Number(e.totalQty) || 0);
+      e.batchNeed = take;
+      remaining -= take;
+    });
+  });
+}
+
+// The plan's bending entries for a PO. Shared by the queue read and by
+// setBendingComplete, which needs the same batchNeed/totalQty the operator
+// was looking at when they ticked - deriving it twice is how the two drift.
+function buildPlanBendingEntries(order, sheets) {
   var sheetCompletion = parseJsonSafe(order.SheetCompletion, []);
   var bendingCompletion = parseJsonSafe(order.BendingCompletion, []);
-
-  // entry.qty (from flattenPlanOutputs) is the per-sheet rate as configured
-  // in the plan (e.g. "4" for Shelf) - not how many actually come out of
-  // cutting for this PO. That's qty x however many of that sheet-type are
-  // actually being/were cut (its real physicalSheets, honoring any
-  // SheetQtyOverride) - the exact same math Cutting Stage's own output rows
-  // use. Computed once per sheet-type here, then applied per entry below.
   var sheetPlan = computeOrderSheetPlan(
     sheets,
     getOrderSheetMultiplier(order),
@@ -271,16 +309,23 @@ function getBendingQueueForOrder(poNumber) {
     var leftoverAvailable = (!entry.isExtra && !bendingCompletion[index])
       ? getExtraPartInventoryQty(order.ModelName, entry.partName, '')
       : 0;
-    var physicalSheetsForThisSheet = (sheetPlan[entry.sheetIndex] && sheetPlan[entry.sheetIndex].physicalSheets) || 0;
-    var rawTotalQty = entry.qty * physicalSheetsForThisSheet;
+    var rawTotalQty = producedQtyForEntry(sheetPlan, entry);
     var movedQty = Number(planEntryMoves[index]) || 0;
     var pendingQty = Math.max(0, rawTotalQty - movedQty);
+    var perUnit = perUnitByPart[String(entry.partName || '').trim()] || null;
     return {
       index: index,
       sheetIndex: entry.sheetIndex,
       sheetLabel: sheetLabelForBending(sheets[entry.sheetIndex], entry.sheetIndex),
       partName: entry.partName,
       qty: entry.qty,
+      // What one sheet of this type actually yields of this part. Same as
+      // qty for an ordinary output; for a multi-yield one it is
+      // yieldPerSheet, since there qty is the per-almirah requirement.
+      perSheetYield: (function () {
+        var r = (sheetPlan[entry.sheetIndex] && sheetPlan[entry.sheetIndex].rows || [])[entry.outputIndex];
+        return (r && r.yieldPerSheet) ? Number(r.yieldPerSheet) : (Number(entry.qty) || 0);
+      })(),
       totalQty: pendingQty,
       movedQty: movedQty,
       isExtra: entry.isExtra,
@@ -288,15 +333,27 @@ function getBendingQueueForOrder(poNumber) {
       unlocked: !!sheetCompletion[entry.sheetIndex],
       done: !!bendingCompletion[index],
       bentQty: Number(bendingPartial[String(index)]) || 0,
-      perUnit: perUnitByPart[String(entry.partName || '').trim()] || null,
-      batchNeed: perUnitByPart[String(entry.partName || '').trim()]
-        ? perUnitByPart[String(entry.partName || '').trim()] * batchQty
-        : null,
+      perUnit: perUnit,
+      batchNeed: perUnit ? perUnit * batchQty : null,
       leftoverAvailable: leftoverAvailable
     };
   }).filter(function (entry) {
     return !(entry.movedQty > 0 && entry.totalQty <= 0);
   });
+
+  allocateBatchNeeds(entries, perUnitByPart, batchQty);
+  return { entries: entries, batchQty: batchQty, orderQty: orderQty, sheetPlan: sheetPlan };
+}
+
+function getBendingQueueForOrder(poNumber) {
+  var order = findRowById('Orders', 'PoNumber', poNumber);
+  if (!order) {
+    throw new Error('PO not found: ' + poNumber);
+  }
+  var sheets = getOrderActiveSheets(order);
+  var built = buildPlanBendingEntries(order, sheets);
+  var entries = built.entries;
+  var batchQty = built.batchQty;
 
   // Parts currently sitting as surplus stock this order could pull from -
   // its own model plus the Universal bucket (see resolveExtraInventoryModel).
@@ -320,7 +377,7 @@ function getBendingQueueForOrder(poNumber) {
     batchQty: batchQty,
     forceBendAllowed: isForceBendAllowed(order),
     forceBent: parseJsonSafe(order.ForceBentParts, {}),
-    unitsBent: computeUnitsBent(order, entries),
+    unitsBent: computeUnitsBent(order, entries, extraEntries),
     stillToCut: buildStillToCut(order, entries, extraEntries),
     availableInventory: availableInventory,
     bendingStatus: order.BendingStatus || 'pending'
@@ -474,6 +531,33 @@ function setBendingBatchQty(payload) {
   return getBendingQueueForOrder(payload.poNumber);
 }
 
+// "Bending is finished" means every plan card AND every extra task is
+// accounted for. Extras used to be left out of the status entirely, so a PO
+// could report complete with extra parts still sitting unbent - and Assembly
+// opens on exactly this signal.
+//
+// A plan entry whose whole quantity was banked to the Leftover Ledger counts
+// as accounted for too: buildPlanBendingEntries drops its card, so there is
+// nothing left on screen that could ever tick it, and without this the PO
+// could never finish bending at all.
+//
+// Takes the updates about to be written, so it judges the state that is
+// being saved rather than the one already on the row.
+function recomputeBendingStatus(row, sheets, updates) {
+  var merged = {};
+  Object.keys(row).forEach(function (k) { merged[k] = row[k]; });
+  Object.keys(updates || {}).forEach(function (k) { merged[k] = updates[k]; });
+
+  var planEntries = buildPlanBendingEntries(merged, sheets).entries;
+  var extras = getExtraBendingEntries(merged.PoNumber, merged);
+  if (planEntries.length + extras.length === 0) return 'pending';
+
+  var allDone = true;
+  planEntries.forEach(function (e) { if (!e.done) allDone = false; });
+  extras.forEach(function (e) { if (!e.done) allDone = false; });
+  return allDone ? 'complete' : 'pending';
+}
+
 function setBendingComplete(payload) {
   var row = findRowById('Orders', 'PoNumber', payload.poNumber);
   if (!row) {
@@ -498,38 +582,95 @@ function setBendingComplete(payload) {
 
   var completion = parseJsonSafe(row.BendingCompletion, []);
   var wasDone = !!completion[idx];
-  completion[idx] = !!payload.completed;
   var actor = resolveActorName(payload.token);
+  var completionMeta = parseJsonSafe(row.BendingCompletionMeta, {});
+  var partial = parseJsonSafe(row.BendingPartial, {});
+  var partialKey = bendingPartialKey(idx, '');
+
+  // The same numbers the operator was looking at when they clicked.
+  var built = buildPlanBendingEntries(row, sheets);
+  var liveEntry = null;
+  built.entries.forEach(function (e) { if (e.index === idx) liveEntry = e; });
+
+  // Batch mode: when the bender is working through fewer almirahs than the
+  // PO is for, marking a part bent means "this batch's worth is bent" - NOT
+  // the whole part. Booking all of it there is how a 20-of-50 batch used to
+  // close a PO out for bending with 60% of the work still to do.
+  //
+  // The count accumulates in BendingPartial and crossing the entry's full
+  // quantity is what flips the boolean, so nothing downstream has to learn a
+  // new notion of completeness. Outside batch mode - and for entries with no
+  // per-unit figure to scale by, like plan extras - a tick still means all
+  // of it, exactly as before.
+  var batchCovers = null;
+  if (payload.completed && liveEntry &&
+      built.batchQty > 0 && built.batchQty < built.orderQty &&
+      liveEntry.batchNeed !== null && liveEntry.batchNeed > 0 &&
+      liveEntry.batchNeed < liveEntry.totalQty) {
+    batchCovers = liveEntry.batchNeed;
+  }
+
+  var nowDone;
+  if (batchCovers !== null) {
+    var already = Number(partial[partialKey]) || 0;
+    var next = Math.min(liveEntry.totalQty, already + batchCovers);
+    nowDone = next >= liveEntry.totalQty;
+    if (nowDone) {
+      delete partial[partialKey];
+    } else {
+      partial[partialKey] = next;
+    }
+  } else {
+    nowDone = !!payload.completed;
+    // The boolean supersedes the partial count either way: once done, "all
+    // of it" is implied; once un-done, progress is back to zero.
+    delete partial[partialKey];
+  }
+  completion[idx] = nowDone;
 
   // When/by whom/from where - BendingCompletion is only a boolean array, so
   // the PO History report has nothing to show about a part's bending without
   // this. fromInventory records whether this part was covered by existing
   // leftover stock rather than freshly-cut pieces.
-  var completionMeta = parseJsonSafe(row.BendingCompletionMeta, {});
-  if (payload.completed) {
+  if (nowDone) {
     completionMeta[String(idx)] = { at: nowIso(), by: actor, fromInventory: !!payload.useFromInventory };
   } else {
     delete completionMeta[String(idx)];
   }
 
-  // The boolean supersedes the partial count either way: once done, "all of
-  // it" is implied; once un-done, progress is back to zero. Either way a
-  // leftover count would be wrong, so it is cleared in both cases.
-  var partial = parseJsonSafe(row.BendingPartial, {});
-  delete partial[bendingPartialKey(idx, '')];
-
   var updates = {
     BendingCompletion: JSON.stringify(completion),
     BendingCompletionMeta: JSON.stringify(completionMeta),
-    BendingPartial: JSON.stringify(partial),
-    BendingStatus: computeBendingStatus(completion, flat.length)
+    BendingPartial: JSON.stringify(partial)
   };
-  if (payload.completed) {
+  // Only on a genuine not-done -> done transition, so a batch tick that
+  // leaves the entry part-way does not draw from the ledger early.
+  if (nowDone) {
     var consumedMap = parseJsonSafe(row.BendingLeftoverConsumed, {});
     consumeBendingLeftoverIfRequested(row, entry, idx, wasDone, !!payload.useFromInventory, consumedMap, actor);
     updates.BendingLeftoverConsumed = JSON.stringify(consumedMap);
   }
+  updates.BendingStatus = recomputeBendingStatus(row, sheets, updates);
   writeRowUpdates('Orders', row._rowIndex, updates);
+  return getBendingQueueForOrder(payload.poNumber);
+}
+
+// Undo for a mis-clicked batch tick: zeroes an entry's recorded progress
+// without touching anything else. A part-way entry has no ticked checkbox to
+// un-tick, so without this the only way back was to tick it all the way to
+// done and then un-tick that.
+function clearBendingPartial(payload) {
+  var row = findRowById('Orders', 'PoNumber', payload.poNumber);
+  if (!row) {
+    throw new Error('PO not found: ' + payload.poNumber);
+  }
+  var idx = Number(payload.entryIndex);
+  if (idx < 0 || isNaN(idx)) {
+    throw new Error('Invalid entry index');
+  }
+  var partial = parseJsonSafe(row.BendingPartial, {});
+  delete partial[bendingPartialKey(idx, '')];
+  writeRowUpdates('Orders', row._rowIndex, { BendingPartial: JSON.stringify(partial) });
   return getBendingQueueForOrder(payload.poNumber);
 }
 
@@ -599,8 +740,7 @@ function moveEntryQtyToInventory(payload) {
     parseJsonSafe(row.MultiYieldDecisions, {}),
     sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), sheets.length)
   );
-  var physicalSheetsForThisSheet = (sheetPlan[entry.sheetIndex] && sheetPlan[entry.sheetIndex].physicalSheets) || 0;
-  var rawTotalQty = entry.qty * physicalSheetsForThisSheet;
+  var rawTotalQty = producedQtyForEntry(sheetPlan, entry);
 
   var moves = parseJsonSafe(row.PlanEntryInventoryMoves, {});
   var alreadyMoved = Number(moves[idx]) || 0;
@@ -640,9 +780,12 @@ function moveEntryQtyToInventory(payload) {
     updates.BendingCompletion = JSON.stringify(completion);
     updates.BendingCompletionMeta = JSON.stringify(completionMeta);
     updates.BendingPartial = JSON.stringify(partialMap);
-    updates.BendingStatus = computeBendingStatus(completion, flat.length);
   }
 
+  // Banking an entry's WHOLE quantity removes its card, so re-deriving the
+  // status here is what lets a PO still finish bending afterwards - the
+  // vanished card's slot can never be ticked by anyone.
+  updates.BendingStatus = recomputeBendingStatus(row, sheets, updates);
   writeRowUpdates('Orders', row._rowIndex, updates);
   return getBendingQueueForOrder(payload.poNumber);
 }
@@ -753,6 +896,9 @@ function setExtraBendingComplete(payload) {
     }
   }
 
+  // Extras count toward the PO's bending status now, so the last extra to be
+  // ticked is what finishes it - and un-ticking one re-opens it.
+  updates.BendingStatus = recomputeBendingStatus(row, getOrderActiveSheets(row), updates);
   writeRowUpdates('Orders', row._rowIndex, updates);
   return getBendingQueueForOrder(payload.poNumber);
 }
@@ -794,14 +940,15 @@ function markAllBendingComplete(payload) {
   });
 
   // Everything reachable is now fully bent, so no partial counts survive.
-  writeRowUpdates('Orders', row._rowIndex, {
+  var bulkUpdates = {
     BendingPartial: JSON.stringify({}),
     BendingCompletion: JSON.stringify(completion),
     BendingCompletionMeta: JSON.stringify(completionMeta),
-    BendingStatus: computeBendingStatus(completion, flat.length),
     ExtraBendingCompletion: JSON.stringify(extraCompletion),
     ExtraBendingCompletionMeta: JSON.stringify(extraCompletionMeta)
-  });
+  };
+  bulkUpdates.BendingStatus = recomputeBendingStatus(row, sheets, bulkUpdates);
+  writeRowUpdates('Orders', row._rowIndex, bulkUpdates);
   return getBendingQueueForOrder(payload.poNumber);
 }
 

@@ -325,6 +325,31 @@ function setSheetComplete(payload) {
   if (!payload.completed && row.CuttingStatus === 'complete') {
     updates.CuttingStatus = 'pending';
   }
+
+  // Un-cutting a sheet takes its parts back off the bending queue, so any
+  // bending recorded against them has to go with it. Leaving it behind left
+  // those cards locked but still ticked, BendingStatus still "complete", and
+  // the PO still eligible for Assembly - claiming parts were bent off a
+  // sheet that Cutting now says was never cut.
+  if (!payload.completed) {
+    var bendingCompletion = parseJsonSafe(row.BendingCompletion, []);
+    var bendingMeta = parseJsonSafe(row.BendingCompletionMeta, {});
+    var bendingPartialMap = parseJsonSafe(row.BendingPartial, {});
+    var touched = false;
+    flattenPlanOutputs(sheets).forEach(function (flatEntry, flatIdx) {
+      if (flatEntry.sheetIndex !== idx) return;
+      if (bendingCompletion[flatIdx] || bendingPartialMap[String(flatIdx)] !== undefined) touched = true;
+      bendingCompletion[flatIdx] = false;
+      delete bendingMeta[String(flatIdx)];
+      delete bendingPartialMap[String(flatIdx)];
+    });
+    if (touched) {
+      updates.BendingCompletion = JSON.stringify(bendingCompletion);
+      updates.BendingCompletionMeta = JSON.stringify(bendingMeta);
+      updates.BendingPartial = JSON.stringify(bendingPartialMap);
+      updates.BendingStatus = recomputeBendingStatus(row, sheets, updates);
+    }
+  }
   var overrides = sanitizeSheetQtyOverrides(parseJsonSafe(row.SheetQtyOverrides, {}), totalSheets);
   if (payload.completed) {
     // The actual sheets cut, entered on the Cutting Stage "mark done" prompt

@@ -140,6 +140,26 @@ function computeOrderSheetPlan(sheets, poQty, decisionsMap, physicalOverrides) {
   });
 }
 
+// How many pieces a flattened plan entry actually produced.
+//
+// For an ordinary output that is its per-sheet qty x however many of that
+// sheet-type were cut. For a MULTI-YIELD output it is not: there, `qty` is
+// the per-almirah requirement and `yieldPerSheet` is what one sheet yields,
+// and those are different numbers (one sheet of 4 TOPs covers 4 almirahs,
+// not 1). computeOrderSheetPlan has already worked this out per row, so
+// read it from there rather than re-deriving it and getting it wrong - any
+// caller multiplying entry.qty by the sheet count understates every
+// multi-yield part and invents a shortage that does not exist.
+function producedQtyForEntry(sheetPlan, entry) {
+  var sheet = sheetPlan[entry.sheetIndex];
+  if (!sheet) return 0;
+  var row = (sheet.rows || [])[entry.outputIndex];
+  if (row && row.produced !== undefined && row.produced !== null) {
+    return Number(row.produced) || 0;
+  }
+  return (Number(entry.qty) || 0) * (Number(sheet.physicalSheets) || 0);
+}
+
 // { sizeKey: totalPhysicalSheetsNeeded } across every sheet-type in the plan.
 function computeOrderStockNeed(sheets, poQty, decisionsMap, physicalOverrides) {
   var need = {};
