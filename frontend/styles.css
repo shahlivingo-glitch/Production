@@ -984,6 +984,22 @@ a { color: var(--color-accent); }
 
 /* Partial bending progress on an entry that is started but not finished.
    Amber rather than red: it is work in hand, not a problem. */
+.bend-units-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.bend-units-label { font-weight: 700; }
+.bend-units-input { max-width: 110px; }
+.bend-units-done { color: var(--color-muted-foreground); font-size: 13px; }
+
 .bend-progress {
   color: var(--color-warning-text);
   font-weight: 600;

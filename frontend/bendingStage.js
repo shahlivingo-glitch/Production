@@ -125,6 +125,7 @@ function openBendingOrder(poNumber) {
     el('detail-content').style.display = 'block';
     renderBendingStatusPill();
     renderBendingPoSummary();
+    renderBendUnitsBar();
     renderBendingEntries();
     renderExtraBendingEntries();
   }).catch(function (err) {
@@ -316,6 +317,89 @@ function pullShortfallFromInventory(row, source, qtyInput, btn) {
     renderBendingStatusPill();
     renderBendingEntries();
     renderExtraBendingEntries();
+  }).catch(function (err) {
+    btn.disabled = false;
+    showFatalError(err);
+  });
+}
+
+// Bending is done in whole almirahs, so this is the control that matches
+// how the work actually happens: one number, and every part moves by its
+// own per-unit quantity. The per-part boxes below stay for the exceptions
+// (only the doors done, one part short).
+function renderBendUnitsBar() {
+  var host = el('bend-units-bar');
+  if (!host) return;
+  host.innerHTML = '';
+
+  var anyBendable = (currentBendingQueue.entries || []).some(function (e) {
+    return !e.done && e.unlocked && (Number(e.totalQty) || 0) > (Number(e.bentQty) || 0);
+  });
+  if (!anyBendable || !canEdit('bendingStage')) {
+    host.style.display = 'none';
+    return;
+  }
+  host.style.display = 'flex';
+
+  var label = document.createElement('span');
+  label.className = 'bend-units-label';
+  label.textContent = 'Almirahs bent:';
+
+  var input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.placeholder = 'Qty';
+  input.className = 'bend-units-input';
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-primary';
+  btn.textContent = 'Apply to all parts';
+  btn.addEventListener('click', function () {
+    var units = Number(input.value);
+    if (!(units > 0)) { showFatalError('Enter how many almirahs were bent.'); return; }
+    applyBendingUnits(units, btn);
+  });
+
+  var done = document.createElement('span');
+  done.className = 'bend-units-done';
+  var ub = Number(currentBendingQueue.unitsBent) || 0;
+  done.textContent = ub > 0
+    ? ub + ' of ' + currentBendingQueue.qty + ' fully bent so far'
+    : 'none fully bent yet';
+
+  host.appendChild(label);
+  host.appendChild(input);
+  host.appendChild(btn);
+  host.appendChild(done);
+}
+
+function applyBendingUnits(units, btn) {
+  if (!canEdit('bendingStage')) {
+    showFatalError('View only - ask an admin for edit access to mark parts bent.');
+    return;
+  }
+  btn.disabled = true;
+  apiPost('addBendingProgressByUnits', {
+    poNumber: currentBendingQueue.poNumber,
+    units: units
+  }).then(function (result) {
+    if (!result.ok) { btn.disabled = false; showFatalError(result.error); return; }
+    currentBendingQueue = result.data;
+    renderBendingStatusPill();
+    renderBendUnitsBar();
+    renderBendingEntries();
+    renderExtraBendingEntries();
+
+    // Say so when the plan could not cover those units - otherwise the
+    // numbers quietly come up short and it looks like the entry was missed.
+    var short = result.data.shortfallByPart || {};
+    var names = Object.keys(short);
+    if (names.length) {
+      alert('Applied ' + units + ' almirah(s), but these parts ran out of bendable stock:\n\n' +
+        names.map(function (n) { return '  ' + n + ' — ' + short[n] + ' pcs short'; }).join('\n') +
+        '\n\nThey still need cutting before those almirahs are complete.');
+    }
   }).catch(function (err) {
     btn.disabled = false;
     showFatalError(err);
