@@ -611,7 +611,13 @@ function formatBendingQtyText(entry) {
   // and keeps the produced count beside it - the bender needs both: how many
   // to bend now, and whether that many even exist yet.
   if (entry.batchNeed !== null && entry.batchNeed !== undefined) {
-    return entry.batchNeed + ' <span class="muted">(' + total + ' cut'
+    // A part cut on two sheets has its batch need allocated across the
+    // cards, and the first can cover all of it - so this card has nothing to
+    // do this batch. "0" alone would read as an error.
+    var need = entry.batchNeed > 0
+      ? String(entry.batchNeed)
+      : '<span class="muted">none this batch</span>';
+    return need + ' <span class="muted">(' + total + ' cut'
       + (perSheet ? ', ' + perSheet + '/sheet' : '') + ')</span>';
   }
   if (total !== perSheet) {

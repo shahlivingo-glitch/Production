@@ -338,7 +338,12 @@ function buildPlanBendingEntries(order, sheets) {
       leftoverAvailable: leftoverAvailable
     };
   }).filter(function (entry) {
-    return !(entry.movedQty > 0 && entry.totalQty <= 0);
+    // Nothing left to bend, nothing to show. Two ways to get here: the whole
+    // quantity was banked to the Leftover Ledger, or the plan output simply
+    // produces nothing (a blank qty on a sheet - PO-0001 has one). Either
+    // way an un-tickable card would block the PO from ever finishing
+    // bending, since completion now requires every card to be ticked.
+    return entry.totalQty > 0;
   });
 
   allocateBatchNeeds(entries, perUnitByPart, batchQty);
